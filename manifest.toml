@@ -1,0 +1,14 @@
+manifest_version = 1
+
+[module]
+name = "Artificial Dreaming"
+id = "artificial_dreaming"
+description = "Generate using AI"
+version = "0.0.1"
+license = "GNU AGPLv3"
+authors = ["Fripe"]
+requirements = [
+    "aiohttp",
+    "pydantic>=2.0",
+    "aiofiles",
+]
