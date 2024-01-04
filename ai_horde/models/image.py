@@ -3,7 +3,7 @@ from base64 import b64encode, b64decode
 from enum import StrEnum
 from typing import Literal, Any, Annotated, TypeVar
 
-from pydantic import Field, computed_field, conlist, AfterValidator, GetCoreSchemaHandler
+from pydantic import Field, computed_field, conlist, AfterValidator, GetCoreSchemaHandler, ConfigDict
 from pydantic_core import CoreSchema, core_schema
 
 from .general import HordeModel, HordeSuccess, HordeRequest
@@ -11,9 +11,9 @@ from .general import HordeModel, HordeSuccess, HordeRequest
 _T = TypeVar("_T")
 
 
-def unique_list_validator(v: list[_T]) -> list[_T]:
-    assert len(v) == len(set(v)), "List contains duplicate elements"
-    return v
+def unique_list_validator(value: list[_T]) -> list[_T]:
+    assert len(value) == len(set(value)), "List contains duplicate elements"
+    return value
 
 
 UniqueList = Annotated[list[_T], AfterValidator(unique_list_validator)]
@@ -99,22 +99,25 @@ class TIPlacement(StrEnum):
 
 
 class LoRA(HordeModel):
-    # TODO: Rename to "identifier" and alias it to the original name when serializing
-    name: str = Field(
+    # Removes a warning about field names starting with "model_" being reserved
+    model_config = ConfigDict(protected_namespaces=())
+
+    identifier: str = Field(
         description="The exact name or CivitAI ID of the LoRA.",
+        serialization_alias="name",
+        validation_alias="name",
     )
-    # TODO: Rename to "strength" or "model_strength" and alias it to the original name when serializing
-    #  Who named it "model" in the first place??
-    model: float | None = Field(
+    model_strength: float | None = Field(
         default=None,
         description="The strength with which to apply the LoRA to the image generation model.",
-        ge=-5, le=5
+        ge=-5, le=5,
     )
-    # TODO: Rename to "clip_strength" and alias it to the original name when serializing
-    clip: float | None = Field(
+    clip_strength: float | None = Field(
         default=None,
         description="The strength with which to apply the LoRA to the CLIP language model.",
-        ge=-5, le=5
+        serialization_alias="clip",
+        validation_alias="clip",
+        ge=-5, le=5,
     )
     inject_trigger: Literal["any"] | str | None = Field(
         default=None,
@@ -134,17 +137,19 @@ class LoRA(HordeModel):
 
 
 class TextualInversion(HordeModel):
-    # TODO: Rename to "identifier" and alias it to the original name when serializing
-    name: str = Field(
+    identifier: str = Field(
         description="The exact name or CivitAI ID of the Textual Inversion.",
+        serialization_alias="name",
+        validation_alias="name",
     )
-    # TODO Rename to "injection_location" and alias it to the original name when serializing
-    inject_ti: TIPlacement | None = Field(
+    injection_location: TIPlacement | None = Field(
         default=None,
         description=(
             "If set, will automatically inject this TI (filename and strength) into the specified prompt. "
             "If unset, the user will have to manually add the TI filename to the desired prompt."
-        )
+        ),
+        serialization_alias="inject_ti",
+        validation_alias="inject_ti",
     )
     strength: float | None = Field(
         default=None,
@@ -206,12 +211,10 @@ class ImageGenerationParams(HordeModel):
         ),
         ge=0.0, le=100.0,
     )
-
-    # TODO Rename to "post_processors" and alias it to the original name when serializing
-    # TODO: Validate that they are unique
-    post_processing: UniqueList[PostProcessor] | None = Field(
+    post_processors: UniqueList[PostProcessor] | None = Field(
         default=None,
         description="A list of post-processors to apply to the image, in the order specified.",
+        serialization_alias="post_processing"
     )
     facefixer_strength: float | None = Field(
         default=None,
@@ -219,7 +222,7 @@ class ImageGenerationParams(HordeModel):
         ge=0.0, le=1.0,
     )
 
-    loras: list[LoRA] | None = Field(
+    loras: conlist(LoRA, max_length=5) | None = Field(
         default=None,
         description="A list of LoRAs to use when generating this request.",
     )
@@ -327,7 +330,6 @@ class ImageGenerationRequest(HordeRequest):
         default=None,
         description="A base64 encoded WEBP image to use for img2img."
     )
-    # TODO: Rename to a more descriptive name and alias it to the original name
     source_processing: SourceProcessing | None = Field(
         default=None,
         description=(
@@ -387,8 +389,6 @@ class ImageGenerationRequest(HordeRequest):
         )
     )
 
-    # TODO: Figure out how tis works, and add a more detailed description.
-    #  Currently, the description is just taken straight from the API docs.
     proxied_account: str | None = Field(
         default=None,
         description=(
@@ -434,9 +434,9 @@ class GeneratedImageMetadata(HordeModel):
     type: GenerationMetadataType = Field(
         description="The relevance of the metadata field."
     )
-    # TODO: Rename to "cause" and alias it to the original name when serializing?
-    value: GenerationMetadataValue = Field(
+    cause: GenerationMetadataValue = Field(
         description="The value of the metadata field.",
+        validation_alias="value"
     )
     ref: str | None = Field(
         default=None,
@@ -476,14 +476,13 @@ class GeneratedImage(HordeModel):
     gen_metadata: list[GeneratedImageMetadata] | None = Field(
         description="A list of metadata fields for this image.",
     )
-    # TODO: How do I mark a field as deprecated?
+    # TODO: When https://github.com/pydantic/pydantic/issues/2255 gets implemented, mark this as deprecated properly
     state: Literal["ok", "censored"] = Field(
-        description="The state of this generation. Made obsolete by the `gen_metadata` field.",
+        description="DEPRECATED! The state of this generation. Made obsolete by the `gen_metadata` field.",
     )
 
 
 class ImageGenerationCheck(HordeSuccess):
-    # TODO: Are any of these optional?
     waiting: int = Field(
         description="The amount of jobs waiting to be picked up by a worker.",
     )
@@ -528,6 +527,8 @@ class ImageGenerationStatus(ImageGenerationCheck):
 # endregion
 
 
+# region Interrogation
+# noinspection SpellCheckingInspection
 class InterrogationTypeImage(StrEnum):
     GFPGAN = "GFPGAN"
     REALESRGAN_X4PLUS = "RealESRGAN_x4plus"
@@ -539,7 +540,6 @@ class InterrogationTypeImage(StrEnum):
     STRIP_BACKGROUND = "strip_background"
 
 
-# region Interrogation
 # noinspection SpellCheckingInspection
 class InterrogationType(StrEnum):
     CAPTION = "caption"
@@ -668,20 +668,12 @@ class InterrogationStatusForm(HordeModel):
 
 
 class InterrogationStatus(HordeSuccess):
-    # TODO: Refer to
-    #  https://github.com/Haidra-Org/horde-sdk/blob/main/examples/ai_horde_client/alchemy_example.py#L39
-    #  for type information
-
     state: InterrogationStatusState = Field(
         description="The overall status of this interrogation.",
     )
     forms: list[InterrogationStatusForm] = Field(
         description="A list of forms with their results.",
     )
-
-    # @property
-    # def forms(self) -> list[]
-    #     return
 # endregion
 
 

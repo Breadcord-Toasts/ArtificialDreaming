@@ -2,7 +2,7 @@ import datetime
 from enum import Enum
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, ConfigDict
 
 from .general import HordeModel, HordeSuccess
 
@@ -55,10 +55,10 @@ class CivitAIImage(HordeSuccess):
         description="The image's hash.",
     )
     # TODO: They just didn't document this so I need to figure it out myself :bruhmike:
-    # TODO: Rename to "metadata"
-    meta: dict | None = Field(
+    metadata: dict | None = Field(
         default=None,
         description="The image's metadata.",
+        validation_alias="meta"
     )
 
     # noinspection PyNestedDecorators
@@ -71,23 +71,26 @@ class CivitAIImage(HordeSuccess):
 
 
 class CivitAICreator(HordeSuccess):
+    # Removes a warning about field names starting with "model_" being reserved
+    model_config = ConfigDict(protected_namespaces=())
+
     username: str = Field(
         description="The creator's username. This acts as a unique identifier.",
     )
-    # TODO: Rename to "avatar_url" or "image_url"
-    image: str | None = Field(
-        default=None,  # TODO: Should this need to be explicitly specified as being None?
+    image_url: str | None = Field(
+        default=None,
         description="The creator's image (avatar).",
+        validation_alias="image",
     )
-    # TODO: Rename to "model_count"
-    modelCount: int | None = Field(
+    model_count: int | None = Field(
         default=None,
         description="The number of models the creator has uploaded.",
+        validation_alias="modelCount",
     )
-    # TODO rename to "models_url" or "models_link"
-    link: str | None = Field(
+    uploaded_models_url: str | None = Field(
         default=None,
-        description="The creator's link.",
+        description="Link to the creator's uploaded models.",
+        validation_alias="link",
     )
 
 
@@ -96,10 +99,9 @@ class CivitAIModelFileMetadata(HordeModel):
         default=None,
         description="The model file's floating point precision.",
     )
-    # TODO: Make more descriptive, could be confused with "size_kb"
     size: Literal["full", "pruned"] | None = Field(
         default=None,
-        description="The model file's size.",
+        description="The model's size (full or pruned).",
     )
     format: CivitAIFileFormat | None = Field(
         description="The model file's format.",
@@ -107,23 +109,22 @@ class CivitAIModelFileMetadata(HordeModel):
 
 
 class CivitAIModelFile(HordeModel):
-    # TODO: Rename to "size_kb" (maybe drop the "_kb" suffix? prob not)
-    sizeKb: int | None = Field(
+    size_kb: int | None = Field(
         default=None,
         description="The file's size in kilobytes.",
+        validation_alias="sizeKb",
     )
-    # TODO: Rename to "pickle_scan_result"
-    pickleScanResult: ScanResult = Field(
+    pickle_scan: ScanResult = Field(
         description="The status of the pickle scan.",
+        validation_alias="pickleScanResult",
     )
-    # TODO: Rename to "virus_scan_result"
-    virusScanResult: ScanResult = Field(
+    virus_scan: ScanResult = Field(
         description="The status of the virus scan.",
+        validation_alias="virusScanResult",
     )
-    # TODO: rename to "scanned_at"
-    # TODO: Cast date string count to datetime.date when deserializing
-    scannedAt: datetime.datetime | None = Field(
+    scanned_at: datetime.datetime | None = Field(
         description="The date the file was scanned.",
+        validation_alias="scannedAt",
     )
     metadata: CivitAIModelFileMetadata = Field(
         description="The file's metadata.",
@@ -141,15 +142,13 @@ class CivitAIModelVersion(HordeModel):
         default=None,
         description="The model version's description. Usually a changelog.",
     )
-    # TODO: Rename to "created_at"
-    # TODO: Cast date string count to datetime.date when deserializing.
-    #  How in gods name is this meant ot be parsed "2022-11-30T01:14:36.498Z"? Might need a helper function.
-    createdAt: datetime.datetime = Field(
+    created_at: datetime.datetime = Field(
         description="The model version's creation date.",
+        validation_alias="createdAt",
     )
-    # TODO: Rename to "download_url"
-    downloadUrl: str = Field(
+    download_url: str = Field(
         description="The model version's download URL.",
+        validation_alias="downloadUrl",
     )
     trainedWords: list[str] = Field(
         description="The words used to trigger the model.",
@@ -181,20 +180,20 @@ class CivitAIModel(HordeSuccess):
     tags: list[str] = Field(
         description="The model's associated tags.",
     )
-    # TODO: alias to a more descriptive name?
-    # TODO: Maybe replace literals with an enum?
-    mode: Literal["Archived", "TakenDown"] | None = Field(
+    state: Literal["Archived", "TakenDown"] | None = Field(
         default=None,
         description=(
             "The model's current mode. "
             "If it's archived, the files field will be empty. "
             "If it's taken down, the images field will be empty."
-        )
+        ),
+        serialization_alias="mode",
     )
     creator: CivitAICreator = Field(
-        description="The model's creator/uploader.",  # TODO: Factcheck "uploader"
+        description="The model's creator.",
     )
-    # TODO rename to "model_versions"
-    modelVersions: list[CivitAIModelVersion] = Field(
+    versions: list[CivitAIModelVersion] = Field(
+        default=[],  # TODO: Guh??? Something is wrong. Check the json
         description="The model's versions.",
+        validation_alias="modelVersions",
     )

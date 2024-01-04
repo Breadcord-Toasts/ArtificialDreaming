@@ -1,8 +1,8 @@
 import datetime
 from enum import Enum
-from typing import Literal
+from typing import Literal, Any
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from .general import HordeModel, HordeSuccess
 
@@ -37,13 +37,12 @@ class ActiveModel(TinyActiveModel, HordeSuccess):
 
 # region News
 class HordeNews(HordeSuccess):
-    # TODO: Cast date string to datetime.date when deserializing
     date_published: datetime.date = Field(
         description="The date this newspiece was published.",
     )
-    # TODO: Rename to "content" and alias it to the original name when serializing
-    newspiece: str = Field(
+    content: str = Field(
         description="The actual piece of news.",
+        alias="newspiece"
     )
     importance: str = Field(
         description="How critical this newspiece is.",
@@ -58,10 +57,10 @@ class WorkerType(Enum):
 
 
 class WorkerKudoDetails(HordeModel):
-    generated: float = Field(
+    generated: float | None = Field(
         description="The amount of kudos this worker has generated.",
     )
-    uptime: int = Field(
+    uptime: int | None = Field(
         description="The amount of kudos this worker has received from staying online longer.",
     )
 
@@ -92,22 +91,26 @@ class TinyWorker(HordeModel):
 
 # noinspection SpellCheckingInspection
 class Worker(TinyWorker, HordeSuccess):
-    info: str = Field(
+    info: str | None = Field(
+        default=None,
         description="The worker's info/description.",
     )
-    owner: str = Field(
+    owner: str | None = Field(
+        default=None,
         description="The username (alias#id) of the user who created this worker.",
     )
-    team: TinyTeam = Field(
+    team: TinyTeam | None = Field(
         description="The team this worker belongs to.",
     )
     nsfw: bool = Field(
         description="Whether this worker will generate NSFW requests.",
     )
-    models: list[str] = Field(
+    models: list[str] | None = Field(
+        default=None,
         description="A list of models currently served by this worker.",
     )
-    forms: list[str] = Field(
+    forms: list[str] | None = Field(
+        default=None,
         description="A list of forms currently served by this worker.",
     )
     trusted: bool = Field(
@@ -130,10 +133,12 @@ class Worker(TinyWorker, HordeSuccess):
     performance: str = Field(
         description="The average performance of this worker in human readable form.",
     )
-    tokens_generated: int = Field(  # API docs say this is a float but that makes no sense?
+    tokens_generated: float = Field(  # API docs say this is a float but that makes no sense?
+        default=0,
         description="The number of tokens this worker has generated.",
     )
     megapixelsteps_generated: float = Field(
+        default=0,
         description="The number of megapixelsteps this worker has generated.",
     )
     requests_fulfilled: int = Field(
@@ -145,9 +150,17 @@ class Worker(TinyWorker, HordeSuccess):
     kudos_rewards: float = Field(
         description="The amount of kudos this worker has been rewarded in total.",
     )
-    kudos_details: WorkerKudoDetails = Field(
+    kudos_details: WorkerKudoDetails | None = Field(
         description="Details about the worker's kudos.",
     )
+
+    # noinspection PyNestedDecorators
+    @field_validator("kudos_details", mode="before")
+    @classmethod
+    def validate_kudos_details(cls, value: dict[str, Any]) -> WorkerKudoDetails | None:
+        if not any(value.values()):
+            return None
+        return WorkerKudoDetails(**value)
 
     threads: int = Field(
         description="The number of threads this worker is currently running.",
@@ -155,29 +168,35 @@ class Worker(TinyWorker, HordeSuccess):
     uptime: datetime.timedelta = Field(
         description="The amount of time this worker has been online.",
     )
-    max_pixels: int = Field(
+    max_pixels: int | None = Field(
+        default=None,
         description="The maximum number of pixels this worker can generate.",
     )
-    max_length: int = Field(
+    max_length: int | None = Field(
+        default=None,
         description="The maximum amount of tokens this worker can generate.",
     )
-    max_context_length: int = Field(
+    max_context_length: int | None = Field(
+        default=None,
         description="The maximum amount of tokens this worker can read.",
     )
 
     img2img: bool = Field(
+        default=False,
         description="Whether this worker allows generating images from other images.",
     )
     painting: bool = Field(
+        default=False,
         description="Whether this worker allows inpainting/outpainting.",  # TODO: Factcheck, docs only list inpainting
     )
     lora: bool = Field(
+        default=False,
         description="Whether this worker allows generating using LoRAs.",
     )
-    # TODO: This is called "post-processing" in the API, but has to be called "post_processing" here.
-    #  Make sure it's deserialized correctly. (validation_alias)
     post_processing: bool = Field(
+        default=False,
         description="Whether this worker allows post-processing.",
+        validation_alias="post-processing"
     )
 
     # Privileged
@@ -198,6 +217,14 @@ class Worker(TinyWorker, HordeSuccess):
         description="PRIVILEGED! Contact details for the horde admins to reach the worker owner in case of emergency.",
     )
 
+    # noinspection PyNestedDecorators
+    @field_validator("team", mode="before")
+    @classmethod
+    def validate_team(cls, value: dict[str, Any]) -> TinyTeam | None:
+        if not any(value.values()):
+            return None
+        return TinyTeam(**value)
+
 
 class Team(TinyTeam, HordeSuccess):
     info: str = Field(
@@ -213,9 +240,8 @@ class Team(TinyTeam, HordeSuccess):
     kudos: float = Field(
         description="The total amount of kudos the workers in this team have generated while part of it.",
     )
-    # TODO: Cast (second count?) to datetime.timedelta when deserializing
     uptime: datetime.timedelta = Field(
-        description="The total amount of time workers have stayed online while on this team.",
+        description="The combined amount of time workers have stayed online for while on this team.",
     )
     worker_count: int = Field(
         description="The number of workers currently in this team.",
@@ -313,10 +339,9 @@ class MonthlyKudos(HordeModel):
         default=None,
         description="How many kudos this user is scheduled to receive each month.",
     )
-    # TODO: Cast date string to datetime.date when deserializing
-    last_received: datetime.date | None = Field(
+    last_received: datetime.datetime | None = Field(
         default=None,
-        description="Last date this user received monthly kudos.",
+        description="When this user last received their monthly kudo reward.",
     )
 
 
@@ -337,7 +362,6 @@ class HordeUser(HordeSuccess):
     id: int = Field(
         description="The user's unique ID.",
     )
-    # TODO: Cast second count to datetime.timedelta when deserializing
     account_age: datetime.timedelta = Field(
         description="How long this user has been registered.",
     )

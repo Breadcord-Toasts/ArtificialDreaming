@@ -7,10 +7,18 @@ from discord.ext import commands, tasks
 import breadcord
 from .ai_horde.cache import Cache
 from .ai_horde.interface import HordeAPI, CivitAIAPI
+from .ai_horde.models.civitai import ModelType
 from .ai_horde.models.general import HordeRequestError
 from .ai_horde.models.horde_meta import HordeNews
-from .ai_horde.models.image import ImageGenerationRequest, ImageGenerationParams, Base64Image, InterrogationRequest, \
-    InterrogationRequestForm, InterrogationType, GenericProcessedImageResult
+from .ai_horde.models.image import (
+    ImageGenerationRequest,
+    ImageGenerationParams,
+    Base64Image,
+    InterrogationRequest,
+    InterrogationRequestForm,
+    InterrogationType,
+    GenericProcessedImageResult
+)
 
 
 async def file_from_url(session: aiohttp.ClientSession, url: str) -> io.BytesIO:
@@ -113,6 +121,17 @@ class ArtificialDreaming(breadcord.module.ModuleCog):
                 filename="image.webp"
             )],
         )
+
+    @commands.hybrid_command()
+    async def test(self, ctx: commands.Context) -> None:
+        try:
+            models = await self.civitai.get_models(type=ModelType.LORA, pages=5)
+        except HordeRequestError as horde_error:
+            await ctx.reply(f"Error {horde_error.code}: {horde_error.message}")
+            return
+
+        for model in models:
+            print(model.type)
 
 
 async def setup(bot: breadcord.Bot):

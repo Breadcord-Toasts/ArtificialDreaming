@@ -2,7 +2,7 @@ import asyncio
 from http import HTTPMethod
 from json import loads as json_loads
 from logging import Logger
-from typing import Self
+from typing import Self, Any
 from urllib.parse import urlparse, parse_qsl, urlencode
 
 import aiohttp
@@ -10,7 +10,7 @@ from pydantic import BaseModel
 
 from .models.civitai import CivitAIModel, ModelType
 from .models.general import HordeRequestError, HordeRequest
-from .models.horde_meta import ActiveModel, HordeNews, HordeUser, Team
+from .models.horde_meta import ActiveModel, HordeNews, HordeUser, Team, Worker
 from .models.image import (
     ImageGenerationRequest,
     ImageGenerationResponse,
@@ -23,14 +23,22 @@ from .models.image import (
 )
 
 
-# TODO: Take this answer to heart and implement it
-#  "you should define your models in terms of the schema you actually want, not in terms of what you might get"
-#  https://stackoverflow.com/a/75987549
-
-
 class URL(str):
     def __truediv__(self, other: str) -> Self:
         return self.__class__(f"{self.removesuffix('/')}/{other.removeprefix('/')}")
+
+    @property
+    def query_params(self) -> dict[str, str]:
+        return dict(parse_qsl(urlparse(self).query))
+
+    def clear_params(self) -> Self:
+        return self.__class__(urlparse(self)._replace(query="").geturl())
+
+    def set_params(self, **params: Any) -> Self:
+        url = urlparse(self)
+        query_params = dict(parse_qsl(url.query))
+        query_params.update(params)
+        return self.__class__(url._replace(query=urlencode(query_params)).geturl())
 
 
 HORDE_API_BASE = URL("https://stablehorde.net/api/")
@@ -150,6 +158,15 @@ class HordeAPI:
             self.session, HTTPMethod.GET, HORDE_API_BASE / f"v2/teams/{team_id}"
         ))
 
+    async def get_workers(self) -> list[Worker]:
+        json = await json_request(self.session, HTTPMethod.GET, HORDE_API_BASE / "v2/workers")
+        return [Worker.model_validate(worker) for worker in json]
+
+    async def get_worker(self, worker_id: str) -> Worker:
+        return Worker.model_validate(await json_request(
+            self.session, HTTPMethod.GET, HORDE_API_BASE / f"v2/workers/{worker_id}"
+        ))
+
     async def get_news(self) -> list[HordeNews]:
         json = await json_request(self.session, HTTPMethod.GET, HORDE_API_BASE / "v2/status/news")
         return [HordeNews.model_validate(news) for news in json]
@@ -161,21 +178,15 @@ class CivitAIAPI:
         self.logger = logger
 
     async def _fetch_paginated_json_list(self, url: URL, *, pages: int = 1) -> list[JsonLike]:
-        url = urlparse(url)
-
+        total_pages = -1
         items = []
         for page in range(1, pages + 1):
-            query_string = dict(parse_qsl(url.query))
-            query_string["page"] = page
-            # noinspection PyProtectedMember
-            url = url._replace(query=urlencode(query_string))
-
-            print(f"Fetching url: {url.geturl()}")
-            json = await json_request(
-                self.session,
-                HTTPMethod.GET,
-                url.geturl(),
-            )
+            if total_pages != -1 and page > total_pages:
+                break
+            url = url.set_params(page=page)
+            self.logger.debug(f"Fetching page {page} of a requested {pages}.")
+            json = await json_request(self.session, HTTPMethod.GET, url)
+            total_pages = json.get("metadata", {}).get("totalPages", -1)
             page_items = json.get("items", [])
             if not page_items:
                 break
@@ -184,9 +195,18 @@ class CivitAIAPI:
         return items
 
     # noinspection PyShadowingBuiltins
-    async def get_models(self, type: ModelType | None = None, *, pages: int = 1) -> list[CivitAIModel]:
+    async def get_models(
+        self,
+        *,
+        pages: int = 1,
+        type: ModelType | None = None,
+    ) -> list[CivitAIModel]:
+        url = CIVITAI_API_DOMAIN / "v1/models"
+        if type is not None:
+            url = url.set_params(types=type.value)
+
         models = await self._fetch_paginated_json_list(
-            CIVITAI_API_DOMAIN / "v1/models",
+            url,
             pages=pages,
         )
         return [CivitAIModel.model_validate(model) for model in models]

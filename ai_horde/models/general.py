@@ -1,10 +1,4 @@
-# TODO:
-#  Create a custom BaseModel class with an @override'd serialisation that'll specify that aliases should be used
-#  Maybe also provide a logger to be used if, for example, the prompt gets trunkated
 from pydantic import BaseModel
-
-
-# TODO: Make use of "validation_alias" for all aliased fields
 
 
 class HordeModel(BaseModel):
