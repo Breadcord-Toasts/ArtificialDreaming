@@ -76,6 +76,8 @@ class Cache:
                 json.loads(style.model_dump_json(by_alias=False))
                 for style in self.styles
             ])
+        else:
+            self.logger.warning(f"Failed to validate {len(errors)} styles, not saving to cache.")
 
     async def update_style_categories(self) -> None:
         if not file_outdated(self._style_categories_file):
