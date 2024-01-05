@@ -186,7 +186,7 @@ class CivitAIAPI:
             url = url.set_params(page=page)
             self.logger.debug(f"Fetching page {page} of a requested {pages}.")
             json = await json_request(self.session, HTTPMethod.GET, url)
-            total_pages = json.get("metadata", {}).get("totalPages", -1)
+            total_pages = json.get("metadata", {}).get("totalPages", total_pages)
             page_items = json.get("items", [])
             if not page_items:
                 break
