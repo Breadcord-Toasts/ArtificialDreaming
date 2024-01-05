@@ -3,10 +3,11 @@ import json
 import time
 from logging import Logger
 from pathlib import Path
+from typing import Iterable, TypeVar
 
 import aiofiles
 import aiohttp
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from .interface import JsonLike, URL, CivitAIAPI, HordeAPI
 from .models.civitai import CivitAIModel
@@ -19,6 +20,8 @@ __all__ = (
 
 STYLES_LIST = URL("https://api.github.com/repos/Haidra-Org/AI-Horde-Styles/contents/styles.json")
 STYLE_CATEGORY_LIST = URL("https://api.github.com/repos/Haidra-Org/AI-Horde-Styles/contents/categories.json")
+
+AnyModel = TypeVar("AnyModel", bound=BaseModel)
 
 
 class Cache:
@@ -64,14 +67,15 @@ class Cache:
             return
 
         self.logger.info("Fetching styles...")
-        self.styles = [
-            Style(name=name, **style)
-            for name, style in (await fetch_github_json_file(self.session, STYLES_LIST)).items()
-        ]
-        await self._open_and_dump(self._styles_file, [
-            json.loads(style.model_dump_json())
-            for style in self.styles
-        ])
+        raw_styles = await fetch_github_json_file(self.session, STYLES_LIST)
+        raw_styles = [dict(name=name, **style) for name, style in raw_styles.items()]
+        self.styles, errors = self._validate_dicts(raw_styles, Style)
+
+        if not errors:
+            await self._open_and_dump(self._styles_file, [
+                json.loads(style.model_dump_json(by_alias=False))
+                for style in self.styles
+            ])
 
     async def update_style_categories(self) -> None:
         if not file_outdated(self._style_categories_file):
@@ -95,13 +99,13 @@ class Cache:
         self.logger.info("Fetching models...")
         self.models = await self.civitai.get_models(pages=1)
         await self._open_and_dump(self._models_file, [
-            json.loads(model.model_dump_json())
+            json.loads(model.model_dump_json(by_alias=False))
             for model in self.models
         ])
 
     async def load_cache(self, path: Path, *, model: type[BaseModel] | None = None) -> JsonLike | BaseModel:
         self.logger.debug(f"Loading cache file {path}")
-        async with aiofiles.open(path, "r") as file:
+        async with aiofiles.open(path, "r", encoding="utf-8") as file:
             data = json.loads(await file.read())
             if model is not None:
                 return [model.model_validate(item) for item in data]
@@ -109,8 +113,23 @@ class Cache:
 
     async def _open_and_dump(self, path: Path, data: JsonLike) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        async with aiofiles.open(path, "w") as file:
+        async with aiofiles.open(path, "w", encoding="utf-8") as file:
             await file.write(json.dumps(data, indent=4*self.formatted_logs))
+
+    def _validate_dicts(
+        self,
+        data: Iterable[JsonLike],
+        model: type[AnyModel],
+    ) -> tuple[list[AnyModel], list[Exception]]:
+        validated = []
+        errors = []
+        for item in data:
+            try:
+                validated.append(model.model_validate(item))
+            except ValidationError as error:
+                self.logger.exception(f"Failed to validate {model.__name__} {item}")
+                errors.append(error)
+        return validated, errors
 
 
 def file_outdated(path: Path) -> bool:
