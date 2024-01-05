@@ -36,9 +36,7 @@ class Base64Image(str):
         return "<Base64Image>"
 
     @classmethod
-    def __get_pydantic_core_schema__(
-        cls, source_type: Any, handler: GetCoreSchemaHandler
-    ) -> CoreSchema:
+    def __get_pydantic_core_schema__(cls, source_type: Any, handler: GetCoreSchemaHandler) -> CoreSchema:
         return core_schema.no_info_after_validator_function(cls, handler(str))
 
 
@@ -102,9 +100,9 @@ class LoRA(HordeModel):
     # Removes a warning about field names starting with "model_" being reserved
     model_config = ConfigDict(protected_namespaces=())
 
+    # TODO: Fix error when dumping and loading this model, it only accepts "name"
     identifier: str = Field(
         description="The exact name or CivitAI ID of the LoRA.",
-        serialization_alias="name",
         validation_alias="name",
     )
     model_strength: float | None = Field(

@@ -93,7 +93,7 @@ class Cache:
             return
 
         self.logger.info("Fetching models...")
-        self.models = await self.civitai.get_models()
+        self.models = await self.civitai.get_models(pages=1)
         await self._open_and_dump(self._models_file, [
             json.loads(model.model_dump_json())
             for model in self.models
