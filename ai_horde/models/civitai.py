@@ -2,7 +2,7 @@ import datetime
 from enum import Enum
 from typing import Literal
 
-from pydantic import Field, field_validator, ConfigDict
+from pydantic import Field, field_validator, ConfigDict, AliasChoices
 
 from .general import HordeModel, HordeSuccess
 
@@ -38,6 +38,18 @@ class NSFWLevel(Enum):
     X = "X"
 
 
+class CivitAIImageMetadata(HordeModel):
+    prompt: str | None = Field(
+        default=None,
+        description="The image's prompt.",
+    )
+    negative_prompt: str | None = Field(
+        default=None,
+        description="The image's negative prompt.",
+        validation_alias=AliasChoices("negativePrompt", "negative_prompt"),
+    )
+
+
 class CivitAIImage(HordeSuccess):
     url: str = Field(
         description="The image's URL.",
@@ -55,9 +67,9 @@ class CivitAIImage(HordeSuccess):
         description="The image's hash.",
     )
     # TODO: They just didn't document this so I need to figure it out myself :bruhmike:
-    metadata: dict | None = Field(
+    metadata: CivitAIImageMetadata | None = Field(
         default=None,
-        description="The image's metadata.",
+        description="The image's metadata, like generation parameters.",
         validation_alias="meta"
     )
 
@@ -187,7 +199,7 @@ class CivitAIModel(HordeSuccess):
             "If it's archived, the files field will be empty. "
             "If it's taken down, the images field will be empty."
         ),
-        serialization_alias="mode",
+        validation_alias="mode",
     )
     creator: CivitAICreator = Field(
         description="The model's creator.",

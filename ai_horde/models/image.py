@@ -6,7 +6,7 @@ from typing import Literal, Any, Annotated, TypeVar
 from pydantic import Field, computed_field, conlist, AfterValidator, GetCoreSchemaHandler, ConfigDict
 from pydantic_core import CoreSchema, core_schema
 
-from .general import HordeModel, HordeSuccess, HordeRequest
+from .general import HordeModel, HordeSuccess, HordeRequest, RenamedField
 
 _T = TypeVar("_T")
 
@@ -101,20 +101,20 @@ class LoRA(HordeModel):
     model_config = ConfigDict(protected_namespaces=())
 
     # TODO: Fix error when dumping and loading this model, it only accepts "name"
-    identifier: str = Field(
+    identifier: str = RenamedField(
         description="The exact name or CivitAI ID of the LoRA.",
-        validation_alias="name",
+        renamed_to="identifier", original_name="name",
     )
-    model_strength: float | None = Field(
+    model_strength: float | None = RenamedField(
         default=None,
         description="The strength with which to apply the LoRA to the image generation model.",
+        renamed_to="model_strength", original_name="model",
         ge=-5, le=5,
     )
-    clip_strength: float | None = Field(
+    clip_strength: float | None = RenamedField(
         default=None,
         description="The strength with which to apply the LoRA to the CLIP language model.",
-        serialization_alias="clip",
-        validation_alias="clip",
+        renamed_to="clip_strength", original_name="clip",
         ge=-5, le=5,
     )
     inject_trigger: Literal["any"] | str | None = Field(
@@ -135,19 +135,17 @@ class LoRA(HordeModel):
 
 
 class TextualInversion(HordeModel):
-    identifier: str = Field(
+    identifier: str = RenamedField(
         description="The exact name or CivitAI ID of the Textual Inversion.",
-        serialization_alias="name",
-        validation_alias="name",
+        renamed_to="identifier", original_name="name",
     )
-    injection_location: TIPlacement | None = Field(
+    injection_location: TIPlacement | None = RenamedField(
         default=None,
         description=(
             "If set, will automatically inject this TI (filename and strength) into the specified prompt. "
             "If unset, the user will have to manually add the TI filename to the desired prompt."
         ),
-        serialization_alias="inject_ti",
-        validation_alias="inject_ti",
+        renamed_to="injection_location", original_name="inject_ti",
     )
     strength: float | None = Field(
         default=None,
@@ -454,6 +452,7 @@ class GeneratedImage(HordeModel):
 
     id: str = Field(
         description="The ID of the generated image.",
+
     )
     worker_id: str = Field(
         description="The UUID of the worker which generated this image.",

@@ -15,11 +15,12 @@ class Style(HordeModel):
     positive_prompt: str = Field(
         min_length=1,
         description="The positive prompt which will be used to generate the image(s).",
+        pattern=r".*\{positive_prompt\}.*"
     )
     negative_prompt: str | None = Field(
         default=None,
         description="The negative prompt which will be used to generate the image(s).",
-        # pattern=r".*\{negative_prompt\}.*",
+        pattern=r".*\{negative_prompt\}.*",
     )
 
     # noinspection PyNestedDecorators
