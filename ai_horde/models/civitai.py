@@ -1,8 +1,8 @@
 import datetime
 from enum import Enum
-from typing import Literal
+from typing import Literal, Any, Annotated
 
-from pydantic import Field, field_validator, ConfigDict, AliasChoices
+from pydantic import Field, field_validator, ConfigDict, BeforeValidator, model_validator
 
 from .general import HordeModel, HordeSuccess
 
@@ -14,6 +14,7 @@ class ModelType(Enum):
     HYPERNETWORK = "Hypernetwork"
     AESTHETICGRADIENT = "AestheticGradient"
     LORA = "LORA"
+    LOCON = "LoCon"
     CONTROLNET = "Controlnet"
     POSES = "Poses"
 
@@ -38,16 +39,64 @@ class NSFWLevel(Enum):
     X = "X"
 
 
+def validate_dimensions(value: str | None) -> tuple[int, int] | None:
+    if value is None:
+        return None
+    assert isinstance(value, str), "Must be a string"
+    split = value.split("x", maxsplit=1)
+    assert len(split) == 2, 'Must be in the format "widthxheight"'
+    return int(split[0]), int(split[1])
+
+
+Dimensions = Annotated[tuple[int, int], BeforeValidator(validate_dimensions)]
+
+
 class CivitAIImageMetadata(HordeModel):
-    prompt: str | None = Field(
-        default=None,
-        description="The image's prompt.",
-    )
-    negative_prompt: str | None = Field(
-        default=None,
-        description="The image's negative prompt.",
-        validation_alias=AliasChoices("negativePrompt", "negative_prompt"),
-    )
+    """Generation parameters for a CivitAI image. Further fields will likely be added at runtime."""
+    model_config = ConfigDict(protected_namespaces=(), extra="allow")
+
+    # Fields are so dynamic that it's not a nice UX to raise an exception if one doesn't exist
+    def __getattr__(self, item: str) -> Any:
+        try:
+            return super().__getattr__(item)
+        except AttributeError:
+            return None
+
+    prompt: str | None = Field(default=None)
+    negative_prompt: str | None = Field(default=None)
+    size: Dimensions | None = Field(default=None)
+    hires_resize: Dimensions | None = Field(default=None)
+    seed: int | None = Field(default=None)
+    steps: int | None = Field(default=None)
+    sampler: str | None = Field(default=None)
+    cfg_scale: float | None = Field(default=None)
+    clip_skip: int | None = Field(default=None)
+    hires_steps: int | None = Field(default=None)
+    denoising_strength: float | None = Field(default=None)
+
+    model: str | None = Field(default=None)
+    vae: str | None = Field(default=None)
+    hashes: dict[str, str] | None = Field(default=None)
+
+    resources: list[dict[str, Any]] | None = Field(default=None)
+
+    # noinspection PyNestedDecorators
+    @model_validator(mode="before")
+    @classmethod
+    def fix_keys(cls, data: dict[str, Any]) -> dict[str, Any]:
+        def fix_stupid_key_name(key: str) -> str:
+            key = key.replace(" ", "_")
+            snake_case_key = ""
+            for index, char in enumerate(key):
+                if char.isupper() and index != 0:
+                    # A bit confusing, but this should ensure acronyms are fine
+                    if len(key) > index + 1 and not key[index + 1].isupper():
+                        snake_case_key += "_"
+                snake_case_key += char.lower()
+            key = snake_case_key
+            return key
+
+        return {fix_stupid_key_name(key): value for key, value in data.items()}
 
 
 class CivitAIImage(HordeSuccess):
@@ -107,15 +156,16 @@ class CivitAICreator(HordeSuccess):
 
 
 class CivitAIModelFileMetadata(HordeModel):
-    fp: Literal["fp16", "fp32"] | None = Field(
+    fp: str | None = Field(
         default=None,
-        description="The model file's floating point precision.",
+        description="The model file's floating point precision, such as fp16 or fp32",
     )
     size: Literal["full", "pruned"] | None = Field(
         default=None,
         description="The model's size (full or pruned).",
     )
     format: CivitAIFileFormat | None = Field(
+        default=None,
         description="The model file's format.",
     )
 
@@ -152,7 +202,7 @@ class CivitAIModelVersion(HordeModel):
     )
     description: str | None = Field(
         default=None,
-        description="The model version's description. Usually a changelog.",
+        description="The model version's description as HTML. Usually a changelog.",
     )
     created_at: datetime.datetime = Field(
         description="The model version's creation date.",
@@ -181,7 +231,7 @@ class CivitAIModel(HordeSuccess):
         description="The model name.",
     )
     description: str = Field(
-        description="The model description.",
+        description="The model description as HTML.",
     )
     type: ModelType = Field(
         description="The model type.",

@@ -1,7 +1,7 @@
 import io
 from base64 import b64encode, b64decode
 from enum import StrEnum
-from typing import Literal, Any, Annotated, TypeVar
+from typing import Literal, Annotated, TypeVar
 
 from pydantic import Field, computed_field, conlist, AfterValidator, GetCoreSchemaHandler, ConfigDict
 from pydantic_core import CoreSchema, core_schema
@@ -36,7 +36,7 @@ class Base64Image(str):
         return "<Base64Image>"
 
     @classmethod
-    def __get_pydantic_core_schema__(cls, source_type: Any, handler: GetCoreSchemaHandler) -> CoreSchema:
+    def __get_pydantic_core_schema__(cls, _, handler: GetCoreSchemaHandler) -> CoreSchema:
         return core_schema.no_info_after_validator_function(cls, handler(str))
 
 
@@ -452,7 +452,6 @@ class GeneratedImage(HordeModel):
 
     id: str = Field(
         description="The ID of the generated image.",
-
     )
     worker_id: str = Field(
         description="The UUID of the worker which generated this image.",
@@ -611,7 +610,7 @@ class InterrogationCategoryItem(HordeModel):
         description="The actual value.",
     )
     confidence: float = Field(
-        description="The confidence of this value being applicable to the image."
+        description="The confidence of this value being applicable to the image.",
     )
 
 

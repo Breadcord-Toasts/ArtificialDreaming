@@ -99,15 +99,15 @@ class Cache:
             return
 
         self.logger.info("Fetching models...")
-        self.models = await self.civitai.get_models(pages=1)
+        self.models = await self.civitai.get_models(pages=5)
         await self._open_and_dump(self._models_file, [
-            json.loads(model.model_dump_json(by_alias=False))
+            json.loads(model.model_dump_json(by_alias=False, exclude_none=True))
             for model in self.models
         ])
 
     async def load_cache(self, path: Path, *, model: type[BaseModel] | None = None) -> JsonLike | BaseModel:
         self.logger.debug(f"Loading cache file {path}")
-        async with aiofiles.open(path, "r", encoding="utf-8") as file:
+        async with aiofiles.open(path, encoding="utf-8") as file:
             data = json.loads(await file.read())
             if model is not None:
                 return [model.model_validate(item) for item in data]
@@ -146,4 +146,3 @@ def file_outdated(path: Path) -> bool:
 async def fetch_github_json_file(session: aiohttp.ClientSession, url: URL) -> JsonLike:
     response = await session.get(url, headers=dict(Accept="application/vnd.github.raw+json"))
     return await response.json()
-

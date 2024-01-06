@@ -183,12 +183,13 @@ class CivitAIAPI:
         for page in range(1, pages + 1):
             if total_pages != -1 and page > total_pages:
                 break
-            url = url.set_params(page=page)
-            self.logger.debug(f"Fetching page {page} of a requested {pages}.")
+            self.logger.debug(f"Fetching page {page} of a requested {pages}: {url}")
             json = await json_request(self.session, HTTPMethod.GET, url)
+            url = json.get("metadata", {}).get("nextPage")
+
             total_pages = json.get("metadata", {}).get("totalPages", total_pages)
             page_items = json.get("items", [])
-            if not page_items:
+            if not page_items or url is None:
                 break
             items.extend(page_items)
 

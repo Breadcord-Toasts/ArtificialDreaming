@@ -196,7 +196,7 @@ class Worker(TinyWorker, HordeSuccess):
     post_processing: bool = Field(
         default=False,
         description="Whether this worker allows post-processing.",
-        validation_alias="post-processing"
+        validation_alias="post-processing",
     )
 
     # Privileged
