@@ -18,6 +18,9 @@ from .ai_horde.models.image import (
     InterrogationRequest,
     InterrogationRequestForm,
     InterrogationType,
+    Sampler,
+    LoRA,
+    TextualInversion,
 )
 
 
@@ -76,28 +79,33 @@ class ArtificialDreaming(breadcord.module.ModuleCog):
         await self.cache.update()
 
     @commands.hybrid_command()
-    async def generate(self, ctx: commands.Context, prompt: str, negative_prompt: str | None = None) -> None:
-        response = await ctx.reply("Generating image... Please wait.")
-
-        try:
-            finished_generation = await self.horde.generate_image(ImageGenerationRequest(
-                positive_prompt=prompt,
-                negative_prompt=negative_prompt,
-                params=ImageGenerationParams(
-                ),
-                r2=False,
-            ))
-        except HordeRequestError as horde_error:
-            await response.edit(content=f"Error: {horde_error.message}")
-            return
-
-        await response.edit(
-            content="Generated image.",
-            attachments=[discord.File(
-                finished_generation.generations[0].img.to_bytesio(),
-                filename="image.webp",
-            )],
-        )
+    async def generate(self, ctx: commands.Context, *, prompt: str, negative_prompt: str | None = None) -> None:
+        response = await ctx.reply(f"Generating image... Please wait.")
+        async for finished_image_pair in self.horde.generate_image(ImageGenerationRequest(
+            positive_prompt=prompt,
+            negative_prompt=negative_prompt,
+            models=["AlbedoBase XL (SDXL)"],
+            params=ImageGenerationParams(
+                width=1024,
+                height=1024,
+                sampler="k_dpmpp_sde",
+                loras=[LoRA(identifier="247778", strength_model=1, is_version=True)],
+                steps=8,
+                cfg_scale=2,
+                image_count=4
+            ),
+            r2=False,
+        )):
+            await response.edit(
+                attachments=[
+                    discord.File(
+                        finished_generation.img.to_bytesio(),
+                        filename="image.webp",
+                    )
+                    for finished_generation in finished_image_pair
+                ],
+            )
+        await response.edit(content="Finished generation.")
 
     @commands.hybrid_command()
     async def remove_bg(self, ctx: commands.Context, image_url: str) -> None:

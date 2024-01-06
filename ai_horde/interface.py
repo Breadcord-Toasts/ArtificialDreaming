@@ -1,4 +1,6 @@
 import asyncio
+import time
+from collections.abc import AsyncGenerator
 from http import HTTPMethod
 from json import loads as json_loads
 from logging import Logger
@@ -19,7 +21,7 @@ from .models.image import (
     InterrogationRequest,
     InterrogationResponse,
     InterrogationStatus,
-    InterrogationStatusState,
+    InterrogationStatusState, FinishedGeneration,
 )
 
 
@@ -52,18 +54,26 @@ class HordeAPI:
         self.session = session
         self.logger = logger
 
-    async def generate_image(self, generation_settings: ImageGenerationRequest, /) -> ImageGenerationStatus:
+    async def generate_image(
+            self, generation_settings: ImageGenerationRequest, /
+    ) -> AsyncGenerator[list[FinishedGeneration], None]:
         """Simple helper function to both queue an image generation and wait for it to finish."""
         generation = await self.queue_image_generation(generation_settings)
 
         # There is just about 0 chance that the generation will already be done
         await asyncio.sleep(5)
-
+        start_time = time.time()
+        images_done = 0
         while True:
             check = await self.get_generation_status(generation.id)
-            if check.done:
-                return await self.get_generation_status(generation.id, full=True)
-            await asyncio.sleep(3)
+            if check.finished > images_done:
+                status = await self.get_generation_status(generation.id, full=True)
+                yield status.generations
+            images_done = check.finished
+            if check.done or time.time() - start_time > 60 * 10:
+                self.logger.debug(f"Image generation finished in {time.time() - start_time:.2f}s")
+                return
+            await asyncio.sleep(5)
 
     async def queue_image_generation(self, generation_settings: ImageGenerationRequest, /) -> ImageGenerationResponse:
         queued_generation = ImageGenerationResponse.model_validate(await json_request(

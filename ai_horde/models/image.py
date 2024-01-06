@@ -3,7 +3,7 @@ from base64 import b64decode, b64encode
 from enum import StrEnum
 from typing import Annotated, Literal, TypeVar
 
-from pydantic import AfterValidator, ConfigDict, Field, GetCoreSchemaHandler, computed_field, conlist
+from pydantic import AfterValidator, Field, GetCoreSchemaHandler, computed_field, conlist
 from pydantic_core import CoreSchema, core_schema
 
 from .general import HordeModel, HordeRequest, HordeSuccess, RenamedField
@@ -98,24 +98,20 @@ class TIPlacement(StrEnum):
 
 
 class LoRA(HordeModel):
-    # Removes a warning about field names starting with "model_" being reserved
-    model_config = ConfigDict(protected_namespaces=())
-
-    # TODO: Fix error when dumping and loading this model, it only accepts "name"
     identifier: str = RenamedField(
         description="The exact name or CivitAI ID of the LoRA.",
         renamed_to="identifier", original_name="name",
     )
-    model_strength: float | None = RenamedField(
+    strength_model: float | None = RenamedField(
         default=None,
         description="The strength with which to apply the LoRA to the image generation model.",
-        renamed_to="model_strength", original_name="model",
+        renamed_to="strength_model", original_name="model",
         ge=-5, le=5,
     )
-    clip_strength: float | None = RenamedField(
+    strength_clip: float | None = RenamedField(
         default=None,
         description="The strength with which to apply the LoRA to the CLIP language model.",
-        renamed_to="clip_strength", original_name="clip",
+        renamed_to="strength_clip", original_name="clip",
         ge=-5, le=5,
     )
     inject_trigger: Literal["any"] | str | None = Field(
@@ -166,9 +162,10 @@ class ImageGenerationParams(HordeModel):
         ge=64, le=3072, multiple_of=64,
     )
 
-    n: int | None = Field(
+    image_count: int | None = Field(
         default=None,
         description="The number of images to generate.",
+        serialization_alias="n",
         ge=1, le=20,
     )
 
@@ -182,9 +179,10 @@ class ImageGenerationParams(HordeModel):
         ge=1, le=1000,
     )
 
-    sampler_name: Sampler | None = Field(
+    sampler: Sampler | str | None = Field(
         default=None,
         description="The sampler to use when generating this request.",
+        serialization_alias="sampler_name"
     )
     steps: int | None = Field(
         default=None,
@@ -442,7 +440,7 @@ class GeneratedImageMetadata(HordeModel):
     )
 
 
-class GeneratedImage(HordeModel):
+class FinishedGeneration(HordeModel):
     img: Base64Image = Field(
         description=(
             "The generated image. "
@@ -515,7 +513,7 @@ class ImageGenerationCheck(HordeSuccess):
 
 
 class ImageGenerationStatus(ImageGenerationCheck):
-    generations: list[GeneratedImage] = Field(
+    generations: list[FinishedGeneration] = Field(
         description="A list of generated images.",
     )
     shared: bool = Field(
