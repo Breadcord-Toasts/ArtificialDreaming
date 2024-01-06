@@ -119,17 +119,6 @@ class ArtificialDreaming(breadcord.module.ModuleCog):
             )],
         )
 
-    @commands.hybrid_command()
-    async def test(self, ctx: commands.Context) -> None:
-        try:
-            models = await self.civitai.get_models(type=ModelType.LORA, pages=5)
-        except HordeRequestError as horde_error:
-            await ctx.reply(f"Error {horde_error.code}: {horde_error.message}")
-            return
-
-        for model in models:
-            print(model.type)
-
 
 async def setup(bot: breadcord.Bot):
     await bot.add_cog(ArtificialDreaming("artificial_dreaming"))

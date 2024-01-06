@@ -3,7 +3,7 @@ from http import HTTPMethod
 from json import loads as json_loads
 from logging import Logger
 from typing import Any, Self
-from urllib.parse import parse_qsl, urlencode, urlparse
+from urllib.parse import parse_qsl, urlencode, urlparse, quote
 
 import aiohttp
 from pydantic import BaseModel
@@ -95,8 +95,7 @@ class HordeAPI:
             check = await self.get_interrogation_status(interrogation.id)
             if check.state == InterrogationStatusState.DONE:
                 return check
-            # TODO: Decrease (alter depending on how many are done?)
-            await asyncio.sleep(10)
+            await asyncio.sleep(4 * len(interrogation_settings.forms))
 
     async def queue_interrogation(self, interrogation_settings: InterrogationRequest, /) -> InterrogationResponse:
         queued_interrogation = InterrogationResponse.model_validate(await json_request(
@@ -118,12 +117,14 @@ class HordeAPI:
         json = await json_request(self.session, HTTPMethod.GET, HORDE_API_BASE / "v2/status/models")
         return [ActiveModel.model_validate(model) for model in json]
 
-    # TODO: Figure out why this is not working, test case: "Anything Diffusion"
-    # async def get_model(self, model_name: str) -> ActiveModel | None:
-    #     json = await json_request(self.session, "GET", HORDE_API_BASE / f"v2/status/models/{model_name}")
-    #     if len(json) == 0:
-    #         return None
-    #     return ActiveModel.model_validate(json[0])
+    async def get_model(self, model_name: str) -> ActiveModel | None:
+        """Get a model by its exact name on the horde (case-sensitive)."""
+        json = await json_request(
+            self.session, HTTPMethod.GET, HORDE_API_BASE / f"v2/status/models/{quote(model_name)}"
+        )
+        if len(json) == 0:
+            return None
+        return ActiveModel.model_validate(json[0])
 
     async def get_users(self) -> list[HordeUser]:
         json = await json_request(self.session, HTTPMethod.GET, HORDE_API_BASE / "v2/users")
