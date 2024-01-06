@@ -1,8 +1,8 @@
 import datetime
 from enum import Enum
-from typing import Literal, Any, Annotated
+from typing import Annotated, Any, Literal
 
-from pydantic import Field, field_validator, ConfigDict, BeforeValidator, model_validator
+from pydantic import BeforeValidator, ConfigDict, Field, field_validator, model_validator
 
 from .general import HordeModel, HordeSuccess
 
@@ -53,6 +53,7 @@ Dimensions = Annotated[tuple[int, int], BeforeValidator(validate_dimensions)]
 
 class CivitAIImageMetadata(HordeModel):
     """Generation parameters for a CivitAI image. Further fields will likely be added at runtime."""
+
     model_config = ConfigDict(protected_namespaces=(), extra="allow")
 
     # Fields are so dynamic that it's not a nice UX to raise an exception if one doesn't exist
@@ -88,13 +89,10 @@ class CivitAIImageMetadata(HordeModel):
             key = key.replace(" ", "_")
             snake_case_key = ""
             for index, char in enumerate(key):
-                if char.isupper() and index != 0:
-                    # A bit confusing, but this should ensure acronyms are fine
-                    if len(key) > index + 1 and not key[index + 1].isupper():
-                        snake_case_key += "_"
+                if char.isupper() and index != 0 and len(key) > index + 1 and not key[index + 1].isupper():
+                    snake_case_key += "_"
                 snake_case_key += char.lower()
-            key = snake_case_key
-            return key
+            return snake_case_key
 
         return {fix_stupid_key_name(key): value for key, value in data.items()}
 
@@ -119,7 +117,7 @@ class CivitAIImage(HordeSuccess):
     metadata: CivitAIImageMetadata | None = Field(
         default=None,
         description="The image's metadata, like generation parameters.",
-        validation_alias="meta"
+        validation_alias="meta",
     )
 
     # noinspection PyNestedDecorators
@@ -191,7 +189,7 @@ class CivitAIModelFile(HordeModel):
     metadata: CivitAIModelFileMetadata = Field(
         description="The file's metadata.",
     )
-    
+
 
 class CivitAIModelVersion(HordeModel):
     id: int = Field(
@@ -212,8 +210,9 @@ class CivitAIModelVersion(HordeModel):
         description="The model version's download URL.",
         validation_alias="downloadUrl",
     )
-    trainedWords: list[str] = Field(
+    trained_words: list[str] = Field(
         description="The words used to trigger the model.",
+        validation_alias="trainedWords",
     )
     files: list[CivitAIModelFile] = Field(
         description="The model version's files.",

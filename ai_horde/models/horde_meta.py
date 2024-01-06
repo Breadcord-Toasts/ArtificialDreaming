@@ -1,6 +1,6 @@
 import datetime
 from enum import Enum
-from typing import Literal, Any
+from typing import Any, Literal
 
 from pydantic import Field, field_validator
 
@@ -42,7 +42,7 @@ class HordeNews(HordeSuccess):
     )
     content: str = Field(
         description="The actual piece of news.",
-        alias="newspiece"
+        alias="newspiece",
     )
     importance: str = Field(
         description="How critical this newspiece is.",
@@ -206,7 +206,7 @@ class Worker(TinyWorker, HordeSuccess):
     )
     paused: bool | None = Field(
         default=None,
-        description="PRIVILEGED! If true, this worker will not be given any new requests."
+        description="PRIVILEGED! If true, this worker will not be given any new requests.",
     )
     ipaddr: str | None = Field(
         default=None,
@@ -304,6 +304,7 @@ class UserContributionDetails(HordeModel):
 # noinspection SpellCheckingInspection
 class UserGenerationsRecord(HordeModel):
     """Weather this object represents the user's usage or contributions depends on how this object was obtained."""
+
     image: int = Field(
         description="How many images this user has generated/requested.",
     )
@@ -318,6 +319,7 @@ class UserGenerationsRecord(HordeModel):
 # noinspection SpellCheckingInspection
 class UserAmountRecord(HordeModel):
     """Weather this object represents the user's usage or contributions depends on how this object was obtained."""
+
     megapixelsteps: float = Field(
         description="How many megapixelsteps this user has generated/requested.",
     )
@@ -378,7 +380,7 @@ class HordeUser(HordeSuccess):
         description="Whether this user has registered using an non-oauth service.",
     )
     concurrency: int = Field(
-        description="How many concurrent generations this user may request."
+        description="How many concurrent generations this user may request.",
     )
     worker_invited: int = Field(
         description="How many workers this user is allowed to invite to the horde",
@@ -425,7 +427,7 @@ class HordeUser(HordeSuccess):
             "PRIVILEGED! "
             "The amount of Evaluating kudos this untrusted user has from generations and uptime. "
             "When this number reaches a pre-specified threshold, they automatically become trusted."
-        )
+        ),
     )
     suspicious: int | None = Field(
         default=None,

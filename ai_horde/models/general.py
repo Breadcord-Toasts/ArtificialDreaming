@@ -1,6 +1,7 @@
 from typing import Any
 
-from pydantic import BaseModel, AliasChoices, Field as PydanticField
+from pydantic import AliasChoices, BaseModel
+from pydantic import Field as PydanticField
 
 
 class HordeModel(BaseModel):
@@ -16,15 +17,16 @@ class HordeRequest(HordeModel):
 
 
 class HordeResponse(HordeModel):
-    """An API response. Child objects should not use this type"""
+    """An API response. Child objects should not use this type."""
 
 
 class HordeSuccess(HordeResponse):
-    """A successful API response"""
+    """A successful API response."""
 
 
 class HordeRequestError(RuntimeError):
-    """An error response from the AI Horde API"""
+    """An error response from the AI Horde API."""
+
     def __init__(
         self,
         message: str | None = None,
@@ -39,7 +41,7 @@ class HordeRequestError(RuntimeError):
 
 
 # noinspection PyPep8Naming
-def RenamedField(
+def RenamedField(  # noqa: N802
     *args: Any,
     renamed_to: str,
     original_name: str,

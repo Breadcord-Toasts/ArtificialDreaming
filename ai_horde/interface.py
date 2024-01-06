@@ -2,23 +2,23 @@ import asyncio
 from http import HTTPMethod
 from json import loads as json_loads
 from logging import Logger
-from typing import Self, Any
-from urllib.parse import urlparse, parse_qsl, urlencode
+from typing import Any, Self
+from urllib.parse import parse_qsl, urlencode, urlparse
 
 import aiohttp
 from pydantic import BaseModel
 
 from .models.civitai import CivitAIModel, ModelType
-from .models.general import HordeRequestError, HordeRequest
+from .models.general import HordeRequest, HordeRequestError
 from .models.horde_meta import ActiveModel, HordeNews, HordeUser, Team, Worker
 from .models.image import (
+    ImageGenerationCheck,
     ImageGenerationRequest,
     ImageGenerationResponse,
     ImageGenerationStatus,
-    ImageGenerationCheck,
     InterrogationRequest,
-    InterrogationStatus,
     InterrogationResponse,
+    InterrogationStatus,
     InterrogationStatusState,
 )
 
@@ -52,9 +52,7 @@ class HordeAPI:
         self.session = session
         self.logger = logger
 
-    async def generate_image(
-        self, generation_settings: ImageGenerationRequest, /
-    ) -> ImageGenerationStatus:
+    async def generate_image(self, generation_settings: ImageGenerationRequest, /) -> ImageGenerationStatus:
         """Simple helper function to both queue an image generation and wait for it to finish."""
         generation = await self.queue_image_generation(generation_settings)
 
@@ -67,18 +65,16 @@ class HordeAPI:
                 return await self.get_generation_status(generation.id, full=True)
             await asyncio.sleep(3)
 
-    async def queue_image_generation(
-        self, generation_settings: ImageGenerationRequest, /
-    ) -> ImageGenerationResponse:
+    async def queue_image_generation(self, generation_settings: ImageGenerationRequest, /) -> ImageGenerationResponse:
         queued_generation = ImageGenerationResponse.model_validate(await json_request(
             self.session, HTTPMethod.POST, HORDE_API_BASE / "v2/generate/async",
-            data=generation_settings
+            data=generation_settings,
         ))
         self.logger.debug(f"Image generation queued: {queued_generation.id}")
         return queued_generation
 
     async def get_generation_status(
-        self, generation_id: str, *, full: bool = False
+        self, generation_id: str, *, full: bool = False,
     ) -> ImageGenerationStatus | ImageGenerationCheck:
         """Get the status of an image generation. A "full" request will contain generated images."""
         json = await json_request(
@@ -90,11 +86,8 @@ class HordeAPI:
 
     async def cancel_image_generation(self, generation_id: str) -> None:
         await json_request(self.session, HTTPMethod.DELETE, HORDE_API_BASE / "v2/generate/status" / generation_id)
-        return None
 
-    async def interrogate(
-        self, interrogation_settings: InterrogationRequest, /
-    ) -> InterrogationStatus:
+    async def interrogate(self, interrogation_settings: InterrogationRequest, /) -> InterrogationStatus:
         """Simple helper function to both queue an interrogation and wait for it to finish."""
         interrogation = await self.queue_interrogation(interrogation_settings)
 
@@ -105,30 +98,27 @@ class HordeAPI:
             # TODO: Decrease (alter depending on how many are done?)
             await asyncio.sleep(10)
 
-    async def queue_interrogation(
-        self, interrogation_settings: InterrogationRequest, /
-    ) -> InterrogationResponse:
+    async def queue_interrogation(self, interrogation_settings: InterrogationRequest, /) -> InterrogationResponse:
         queued_interrogation = InterrogationResponse.model_validate(await json_request(
             self.session, HTTPMethod.POST, HORDE_API_BASE / "v2/interrogate/async",
-            data=interrogation_settings
+            data=interrogation_settings,
         ))
         self.logger.debug(f"Interrogation queued: {queued_interrogation.id}")
         return queued_interrogation
 
     async def get_interrogation_status(self, interrogation_id: str) -> InterrogationStatus:
         return InterrogationStatus.model_validate(await json_request(
-            self.session, HTTPMethod.GET, HORDE_API_BASE / "v2/interrogate/status" / interrogation_id
+            self.session, HTTPMethod.GET, HORDE_API_BASE / "v2/interrogate/status" / interrogation_id,
         ))
 
     async def cancel_interrogation(self, interrogation_id: str) -> None:
         await json_request(self.session, HTTPMethod.DELETE, HORDE_API_BASE / "v2/interrogate/status" / interrogation_id)
-        return None
 
     async def get_models(self) -> list[ActiveModel]:
         json = await json_request(self.session, HTTPMethod.GET, HORDE_API_BASE / "v2/status/models")
         return [ActiveModel.model_validate(model) for model in json]
 
-    # TODO: Figure out why this is not working, test case: "Anything Diffusion
+    # TODO: Figure out why this is not working, test case: "Anything Diffusion"
     # async def get_model(self, model_name: str) -> ActiveModel | None:
     #     json = await json_request(self.session, "GET", HORDE_API_BASE / f"v2/status/models/{model_name}")
     #     if len(json) == 0:
@@ -141,12 +131,12 @@ class HordeAPI:
 
     async def get_user(self, user_id: int) -> HordeUser:
         return HordeUser.model_validate(await json_request(
-            self.session, HTTPMethod.GET, HORDE_API_BASE / f"v2/users/{user_id}"
+            self.session, HTTPMethod.GET, HORDE_API_BASE / f"v2/users/{user_id}",
         ))
 
     async def get_current_user(self) -> HordeUser:
         return HordeUser.model_validate(await json_request(
-            self.session, HTTPMethod.GET, HORDE_API_BASE / f"v2/find_user"
+            self.session, HTTPMethod.GET, HORDE_API_BASE / "v2/find_user",
         ))
 
     async def get_teams(self) -> list[Team]:
@@ -155,7 +145,7 @@ class HordeAPI:
 
     async def get_team(self, team_id: str) -> Team:
         return Team.model_validate(await json_request(
-            self.session, HTTPMethod.GET, HORDE_API_BASE / f"v2/teams/{team_id}"
+            self.session, HTTPMethod.GET, HORDE_API_BASE / f"v2/teams/{team_id}",
         ))
 
     async def get_workers(self) -> list[Worker]:
@@ -164,7 +154,7 @@ class HordeAPI:
 
     async def get_worker(self, worker_id: str) -> Worker:
         return Worker.model_validate(await json_request(
-            self.session, HTTPMethod.GET, HORDE_API_BASE / f"v2/workers/{worker_id}"
+            self.session, HTTPMethod.GET, HORDE_API_BASE / f"v2/workers/{worker_id}",
         ))
 
     async def get_news(self) -> list[HordeNews]:
@@ -220,8 +210,7 @@ async def json_request(
     *,
     data: dict[str, JsonLike] | BaseModel | None = None,
 ) -> JsonLike:
-    """
-    Helper function to make a request with a pydantic model as the data
+    """Helper function to make a request with a pydantic model as the data.
 
     :param session: aiohttp.ClientSession to use
     :param method: HTTP method to use

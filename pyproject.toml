@@ -1,0 +1,43 @@
+[tool.ruff]
+select = [
+    "F",        # pyflakes
+    "W",        # pycodestyle warnings
+    "E",        # pycodestyle errors
+    "C90",      # mccabe
+    "I",        # isort
+    "N",        # pep8-naming
+    "D",        # pydocstyle
+    "UP",       # pyupgrade
+    "ASYNC",    # flake8-async
+    "S",        # flake8-bandit
+    "B",        # flake8-bugbear
+    "COM",      # flake8-commas
+    "C4",       # flake8-comprehensions
+    "Q",        # flake8-quotes
+    "RET",      # flake8-return
+    "SIM",      # flake8-simplify
+    "TCH",      # flake8-type-checking
+    "ARG",      # flake8-unused-arguments
+    "PTH",      # flake8-use-pathlib
+    "PGH",      # pygrep-hooks
+    "PL",       # Pylint
+    "PERF",     # Perflint
+    "RUF",      # Ruff-specific rules
+]
+
+ignore = [
+    # Inherited from breadcord
+    "D10", "D401", "D203", "D213", "PTH123", "PLR0913",
+
+    # Assert is used often with pydantic
+    "S101",
+
+    # There are a lot of magic values that we just need to deal with, especially in model definitions
+    "PLR2004",
+]
+
+line-length = 120
+
+
+[tool.ruff.per-file-ignores]
+"__init__.py" = ["F401", "N999"]

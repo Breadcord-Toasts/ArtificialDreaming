@@ -9,7 +9,7 @@ import aiofiles
 import aiohttp
 from pydantic import BaseModel, ValidationError
 
-from .interface import JsonLike, URL, CivitAIAPI, HordeAPI
+from .interface import URL, CivitAIAPI, HordeAPI, JsonLike
 from .models.civitai import CivitAIModel
 from .models.styles import Style, StyleCategory
 
@@ -33,7 +33,7 @@ class Cache:
         civitai_api: CivitAIAPI,
         logger: Logger,
         storage_path: Path,
-        formatted_cache: bool = False
+        formatted_cache: bool = False,
     ):
         self.session = session
         self.horde = horde_api
@@ -144,5 +144,5 @@ def file_outdated(path: Path) -> bool:
 
 
 async def fetch_github_json_file(session: aiohttp.ClientSession, url: URL) -> JsonLike:
-    response = await session.get(url, headers=dict(Accept="application/vnd.github.raw+json"))
+    response = await session.get(url, headers={"Accept": "application/vnd.github.raw+json"})
     return await response.json()

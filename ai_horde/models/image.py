@@ -1,12 +1,12 @@
 import io
-from base64 import b64encode, b64decode
+from base64 import b64decode, b64encode
 from enum import StrEnum
-from typing import Literal, Annotated, TypeVar
+from typing import Annotated, Literal, TypeVar
 
-from pydantic import Field, computed_field, conlist, AfterValidator, GetCoreSchemaHandler, ConfigDict
+from pydantic import AfterValidator, ConfigDict, Field, GetCoreSchemaHandler, computed_field, conlist
 from pydantic_core import CoreSchema, core_schema
 
-from .general import HordeModel, HordeSuccess, HordeRequest, RenamedField
+from .general import HordeModel, HordeRequest, HordeSuccess, RenamedField
 
 _T = TypeVar("_T")
 
@@ -21,6 +21,7 @@ UniqueList = Annotated[list[_T], AfterValidator(unique_list_validator)]
 
 class Base64Image(str):
     """A Base64-encoded image."""
+
     def __new__(cls, data: str | bytes):
         if isinstance(data, bytes):
             data = b64encode(data).decode()
@@ -210,7 +211,7 @@ class ImageGenerationParams(HordeModel):
     post_processors: UniqueList[PostProcessor] | None = Field(
         default=None,
         description="A list of post-processors to apply to the image, in the order specified.",
-        serialization_alias="post_processing"
+        serialization_alias="post_processing",
     )
     facefixer_strength: float | None = Field(
         default=None,
@@ -237,7 +238,7 @@ class ImageGenerationParams(HordeModel):
         description=(
             "If true if the source image is a pre-generated control map for ControlNet use, "
             "otherwise a control map will be generated."
-        )
+        ),
     )
 
     clip_skip: int | None = Field(
@@ -284,12 +285,12 @@ class ImageGenerationRequest(HordeRequest):
     positive_prompt: str = Field(
         min_length=1,
         description="The positive prompt which will be used to generate the image(s).",
-        exclude=True  # Not in the API, see self.prompt
+        exclude=True,  # Not in the API, see self.prompt
     )
     negative_prompt: str | None = Field(
         default=None,
         description="The negative prompt which will be used to generate the image(s).",
-        exclude=True  # Not in the API, see self.prompt
+        exclude=True,  # Not in the API, see self.prompt
     )
 
     params: ImageGenerationParams | None = None
@@ -319,21 +320,21 @@ class ImageGenerationRequest(HordeRequest):
         description=(
             "A list of models that are allowed to fulfill this request. "
             "If none are specified, all models are allowed."
-        )
+        ),
     )
 
     source_image: Base64Image | None = Field(
         default=None,
-        description="A base64 encoded WEBP image to use for img2img."
+        description="A base64 encoded WEBP image to use for img2img.",
     )
     source_processing: SourceProcessing | None = Field(
         default=None,
         description=(
             "If a source image is provided, this specifies how it should be processed. "
-            
+
             "If set to inpainting or outpainting, a mask must also be provided "
             "either via source_mask or as the source image's alpha channel. "
-        )
+        ),
     )
     source_mask: str | None = Field(
         default=None,
@@ -343,7 +344,7 @@ class ImageGenerationRequest(HordeRequest):
             # TODO: Factcheck this
             # "The mask should be a grayscale image where white represents the area to inpaint/outpaint "
             # "and black represents the area to keep. "
-        )
+        ),
     )
 
     workers: conlist(int, max_length=5) | None = Field(
@@ -382,7 +383,7 @@ class ImageGenerationRequest(HordeRequest):
             "If true, the generated image will be shared with LAION (https://laion.ai/) for improving their dataset. "
             "This will reduce the kudo cost of the request by 2. "
             "If the user is anonymous, this will allways be treated as true."
-        )
+        ),
     )
 
     proxied_account: str | None = Field(
@@ -428,11 +429,11 @@ class GenerationMetadataValue(StrEnum):
 
 class GeneratedImageMetadata(HordeModel):
     type: GenerationMetadataType = Field(
-        description="The relevance of the metadata field."
+        description="The relevance of the metadata field.",
     )
     cause: GenerationMetadataValue = Field(
         description="The value of the metadata field.",
-        validation_alias="value"
+        validation_alias="value",
     )
     ref: str | None = Field(
         default=None,
@@ -606,6 +607,7 @@ class CaptionResult(HordeModel):
 
 class InterrogationCategoryItem(HordeModel):
     """Represents a describing term and its confidence."""
+
     text: str = Field(
         description="The actual value.",
     )

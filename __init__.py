@@ -6,18 +6,18 @@ from discord.ext import commands, tasks
 
 import breadcord
 from .ai_horde.cache import Cache
-from .ai_horde.interface import HordeAPI, CivitAIAPI
+from .ai_horde.interface import CivitAIAPI, HordeAPI
 from .ai_horde.models.civitai import ModelType
 from .ai_horde.models.general import HordeRequestError
 from .ai_horde.models.horde_meta import HordeNews
 from .ai_horde.models.image import (
-    ImageGenerationRequest,
-    ImageGenerationParams,
     Base64Image,
+    GenericProcessedImageResult,
+    ImageGenerationParams,
+    ImageGenerationRequest,
     InterrogationRequest,
     InterrogationRequestForm,
     InterrogationType,
-    GenericProcessedImageResult
 )
 
 
@@ -42,15 +42,15 @@ class ArtificialDreaming(breadcord.module.ModuleCog):
         self.generic_session = aiohttp.ClientSession()
         self.horde = HordeAPI(
             aiohttp.ClientSession(headers=common_headers | {
-                "apikey": self.settings.horde_api_key.value
+                "apikey": self.settings.horde_api_key.value,
             }),
-            logger=self.logger
+            logger=self.logger,
         )
         self.civitai = CivitAIAPI(
             aiohttp.ClientSession(headers=common_headers | {
-                "Authorization": f"Bearer {self.settings.civitai_api_key.value}"
+                "Authorization": f"Bearer {self.settings.civitai_api_key.value}",
             }),
-            logger=self.logger
+            logger=self.logger,
         )
         self.cache = Cache(
             session=self.generic_session,
@@ -79,7 +79,7 @@ class ArtificialDreaming(breadcord.module.ModuleCog):
             self.logger.error(f"Error while updating cache: {error}")
 
     @commands.hybrid_command()
-    async def generate(self, ctx: commands.Context, prompt: str, negative_prompt: str = None) -> None:
+    async def generate(self, ctx: commands.Context, prompt: str, negative_prompt: str | None = None) -> None:
         response = await ctx.reply("Generating image... Please wait.")
 
         try:
@@ -95,10 +95,10 @@ class ArtificialDreaming(breadcord.module.ModuleCog):
             return
 
         await response.edit(
-            content=f"Generated image.",
+            content="Generated image.",
             attachments=[discord.File(
                 finished_generation.generations[0].img.to_bytesio(),
-                filename="image.webp"
+                filename="image.webp",
             )],
         )
 
@@ -109,16 +109,16 @@ class ArtificialDreaming(breadcord.module.ModuleCog):
         finished_interrogation = await self.horde.interrogate(InterrogationRequest(
             image_url=image_url,
             forms=[
-                InterrogationRequestForm(name=InterrogationType.GFPGAN)
+                InterrogationRequestForm(name=InterrogationType.GFPGAN),
             ],
         ))
         result: GenericProcessedImageResult = finished_interrogation.forms[0].result
 
         await response.edit(
-            content=f"Interrogated image.",
+            content="Interrogated image.",
             attachments=[discord.File(
                 await file_from_url(self.generic_session, result.image_url),
-                filename="image.webp"
+                filename="image.webp",
             )],
         )
 

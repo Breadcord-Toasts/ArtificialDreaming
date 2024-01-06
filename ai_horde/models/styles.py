@@ -15,7 +15,7 @@ class Style(HordeModel):
     positive_prompt: str = Field(
         min_length=1,
         description="The positive prompt which will be used to generate the image(s).",
-        pattern=r".*\{positive_prompt\}.*"
+        pattern=r".*\{positive_prompt\}.*",
     )
     negative_prompt: str | None = Field(
         default=None,
@@ -24,7 +24,7 @@ class Style(HordeModel):
     )
 
     # noinspection PyNestedDecorators
-    @model_validator(mode='before')
+    @model_validator(mode="before")
     @classmethod
     def fix_prompt(cls, data: Any) -> Any:
         assert isinstance(data, dict), "Data must be a dict"
