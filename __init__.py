@@ -73,10 +73,7 @@ class ArtificialDreaming(breadcord.module.ModuleCog):
 
     @tasks.loop(hours=1)
     async def update_cache(self) -> None:
-        try:
-            await self.cache.update()
-        except Exception as error:
-            self.logger.error(f"Error while updating cache: {error}")
+        await self.cache.update()
 
     @commands.hybrid_command()
     async def generate(self, ctx: commands.Context, prompt: str, negative_prompt: str | None = None) -> None:
