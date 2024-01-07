@@ -5,6 +5,7 @@ import discord
 from discord.ext import commands, tasks
 
 import breadcord
+from .advanced_generate import APIPackage, GenerationSettingsView, embed_from_request
 from .ai_horde.cache import Cache
 from .ai_horde.interface import CivitAIAPI, HordeAPI
 from .ai_horde.models.civitai import ModelType
@@ -18,10 +19,16 @@ from .ai_horde.models.image import (
     InterrogationRequest,
     InterrogationRequestForm,
     InterrogationType,
-    Sampler,
     LoRA,
+    Sampler,
     TextualInversion,
 )
+
+
+# === Big to do list ===
+# TODO: Allow seeing previews for models, get data from https://github.com/Haidra-Org/AI-Horde-image-model-reference
+#  This can also be used to provide descriptions to models in the generation command.
+#  Make sure to cache it.
 
 
 async def file_from_url(session: aiohttp.ClientSession, url: str) -> io.BytesIO:
@@ -74,13 +81,13 @@ class ArtificialDreaming(breadcord.module.ModuleCog):
         if self.civitai.session is not None and not self.civitai.session.closed:
             await self.civitai.session.close()
 
-    @tasks.loop(hours=1)
+    @tasks.loop(minutes=10)
     async def update_cache(self) -> None:
         await self.cache.update()
 
     @commands.hybrid_command()
     async def generate(self, ctx: commands.Context, *, prompt: str, negative_prompt: str | None = None) -> None:
-        response = await ctx.reply(f"Generating image... Please wait.")
+        response = await ctx.reply("Generating image... Please wait.")
         async for finished_image_pair in self.horde.generate_image(ImageGenerationRequest(
             positive_prompt=prompt,
             negative_prompt=negative_prompt,
@@ -92,8 +99,9 @@ class ArtificialDreaming(breadcord.module.ModuleCog):
                 loras=[LoRA(identifier="247778", strength_model=1, is_version=True)],
                 steps=8,
                 cfg_scale=2,
-                image_count=4
+                image_count=4,
             ),
+            replacement_filter=True,
             r2=False,
         )):
             await response.edit(
@@ -125,6 +133,30 @@ class ArtificialDreaming(breadcord.module.ModuleCog):
                 await file_from_url(self.generic_session, result.image_url),
                 filename="image.webp",
             )],
+        )
+
+    @commands.hybrid_command()
+    async def advanced_generate(self, ctx: commands.Context, *, prompt: str, negative_prompt: str | None = None) -> None:
+        generation_request = ImageGenerationRequest(
+            positive_prompt=prompt,
+            negative_prompt=negative_prompt,
+            params=ImageGenerationParams(
+                karras=True,
+            ),
+            replacement_filter=True,
+        )
+        view = GenerationSettingsView(
+            logger=self.logger,
+            cache=self.cache,
+            horde_api=self.horde,
+            civitai_api=self.civitai,
+            default_request=generation_request,
+            author_id=ctx.author.id,
+        )
+        await ctx.reply(
+            "Chose generation settings",
+            view=view,
+            embeds=await embed_from_request(generation_request, APIPackage(self.horde, self.civitai, self.cache)),
         )
 
 

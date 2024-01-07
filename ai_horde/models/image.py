@@ -147,6 +147,7 @@ class TextualInversion(HordeModel):
     strength: float | None = Field(
         default=None,
         description="The strength with which to apply the TI to the prompt. Only used when inject_ti set.",
+        ge=-5, le=5,
     )
 
 
@@ -182,7 +183,7 @@ class ImageGenerationParams(HordeModel):
     sampler: Sampler | str | None = Field(
         default=None,
         description="The sampler to use when generating this request.",
-        serialization_alias="sampler_name"
+        serialization_alias="sampler_name",
     )
     steps: int | None = Field(
         default=None,

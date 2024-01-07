@@ -11,6 +11,7 @@ from pydantic import BaseModel, ValidationError
 
 from .interface import URL, CivitAIAPI, HordeAPI, JsonLike
 from .models.civitai import CivitAIModel
+from .models.horde_meta import ActiveModel
 from .models.styles import Style, StyleCategory
 
 __all__ = (
@@ -45,18 +46,21 @@ class Cache:
 
         self.styles: list[Style] = []
         self.style_categories: list[StyleCategory] = []
-        self.models: list[CivitAIModel] = []
+        self.horde_models: list[ActiveModel] = []
+        self.civitai_models: list[CivitAIModel] = []
 
         self._styles_file = self.storage_path / "styles.json"
         self._style_categories_file = self.storage_path / "style_categories.json"
-        self._models_file = self.storage_path / "models.json"
+        self._horde_models_file = self.storage_path / "horde_models.json"
+        self._civitai_models_file = self.storage_path / "civitai_models.json"
 
     async def update(self) -> None:
         self.logger.info("Updating cache...")
         await asyncio.gather(
             self.update_styles(),
             self.update_style_categories(),
-            self.update_models(),
+            self.update_horde_models(),
+            self.update_civitai_models(),
         )
         self.logger.info("Cache updated.")
 
@@ -89,20 +93,36 @@ class Cache:
         self.style_categories = await fetch_github_json_file(self.session, STYLE_CATEGORY_LIST)
         await self._open_and_dump(self._style_categories_file, self.style_categories)
 
-    async def update_models(self) -> None:
-        if not file_outdated(self._models_file):
-            if not self.models:
-                self.models = [
-                    CivitAIModel.model_validate(model)
-                    for model in await self.load_cache(self._models_file)
+    async def update_horde_models(self) -> None:
+        if not file_outdated(self._horde_models_file, timeout_seconds=60 * 30):
+            if not self.horde_models:
+                self.horde_models = [
+                    ActiveModel.model_validate(model)
+                    for model in await self.load_cache(self._horde_models_file)
                 ]
             return
 
-        self.logger.info("Fetching models...")
-        self.models = await self.civitai.get_models(pages=5)
-        await self._open_and_dump(self._models_file, [
+        self.logger.info("Fetching horde models...")
+        self.horde_models = await self.horde.get_models()
+        await self._open_and_dump(self._horde_models_file, [
+            json.loads(model.model_dump_json(by_alias=False))
+            for model in self.horde_models
+        ])
+
+    async def update_civitai_models(self) -> None:
+        if not file_outdated(self._civitai_models_file):
+            if not self.civitai_models:
+                self.civitai_models = [
+                    CivitAIModel.model_validate(model)
+                    for model in await self.load_cache(self._civitai_models_file)
+                ]
+            return
+
+        self.logger.info("Fetching CivitAI models...")
+        self.civitai_models = await self.civitai.get_models(pages=5)
+        await self._open_and_dump(self._civitai_models_file, [
             json.loads(model.model_dump_json(by_alias=False, exclude_none=True))
-            for model in self.models
+            for model in self.civitai_models
         ])
 
     async def load_cache(self, path: Path, *, model: type[BaseModel] | None = None) -> JsonLike | BaseModel:
@@ -134,13 +154,13 @@ class Cache:
         return validated, errors
 
 
-def file_outdated(path: Path) -> bool:
+def file_outdated(path: Path, timeout_seconds: int = 60 * 60 * 2) -> bool:
     if not path.is_file():
         return True
 
     last_modified = path.stat().st_mtime
     now = time.time()
-    return now - last_modified > 60 * 60 * 2
+    return now - last_modified > timeout_seconds
 
 
 async def fetch_github_json_file(session: aiohttp.ClientSession, url: URL) -> JsonLike:

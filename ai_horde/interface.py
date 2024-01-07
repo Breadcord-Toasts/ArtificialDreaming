@@ -5,15 +5,16 @@ from http import HTTPMethod
 from json import loads as json_loads
 from logging import Logger
 from typing import Any, Self
-from urllib.parse import parse_qsl, urlencode, urlparse, quote
+from urllib.parse import parse_qsl, quote, urlencode, urlparse
 
 import aiohttp
 from pydantic import BaseModel
 
-from .models.civitai import CivitAIModel, ModelType
+from .models.civitai import CivitAIModel, CivitAIModelVersion, ModelType
 from .models.general import HordeRequest, HordeRequestError
 from .models.horde_meta import ActiveModel, HordeNews, HordeUser, Team, Worker
 from .models.image import (
+    FinishedGeneration,
     ImageGenerationCheck,
     ImageGenerationRequest,
     ImageGenerationResponse,
@@ -21,13 +22,13 @@ from .models.image import (
     InterrogationRequest,
     InterrogationResponse,
     InterrogationStatus,
-    InterrogationStatusState, FinishedGeneration,
+    InterrogationStatusState,
 )
 
 
 class URL(str):
-    def __truediv__(self, other: str) -> Self:
-        return self.__class__(f"{self.removesuffix('/')}/{other.removeprefix('/')}")
+    def __truediv__(self, other: Any) -> Self:
+        return self.__class__(f"{self.removesuffix('/')}/{str(other).removeprefix('/')}")
 
     @property
     def query_params(self) -> dict[str, str]:
@@ -55,7 +56,7 @@ class HordeAPI:
         self.logger = logger
 
     async def generate_image(
-            self, generation_settings: ImageGenerationRequest, /
+            self, generation_settings: ImageGenerationRequest, /,
     ) -> AsyncGenerator[list[FinishedGeneration], None]:
         """Simple helper function to both queue an image generation and wait for it to finish."""
         generation = await self.queue_image_generation(generation_settings)
@@ -130,7 +131,7 @@ class HordeAPI:
     async def get_model(self, model_name: str) -> ActiveModel | None:
         """Get a model by its exact name on the horde (case-sensitive)."""
         json = await json_request(
-            self.session, HTTPMethod.GET, HORDE_API_BASE / f"v2/status/models/{quote(model_name)}"
+            self.session, HTTPMethod.GET, HORDE_API_BASE / f"v2/status/models/{quote(model_name)}",
         )
         if len(json) == 0:
             return None
@@ -212,6 +213,14 @@ class CivitAIAPI:
             pages=pages,
         )
         return [CivitAIModel.model_validate(model) for model in models]
+
+    async def get_model(self, model_id: int | str) -> CivitAIModel | None:
+        json = await json_request(self.session, HTTPMethod.GET, CIVITAI_API_DOMAIN / "v1/models" / model_id)
+        return CivitAIModel.model_validate(json)
+
+    async def get_model_version(self, version_id: int | str) -> CivitAIModelVersion | None:
+        json = await json_request(self.session, HTTPMethod.GET, CIVITAI_API_DOMAIN / "v1/model-versions" / version_id)
+        return CivitAIModelVersion.model_validate(json)
 
 
 async def json_request(
