@@ -56,7 +56,7 @@ class HordeAPI:
         self.logger = logger
 
     async def generate_image(
-            self, generation_settings: ImageGenerationRequest, /,
+        self, generation_settings: ImageGenerationRequest, /,
     ) -> AsyncGenerator[list[FinishedGeneration], None]:
         """Simple helper function to both queue an image generation and wait for it to finish."""
         generation = await self.queue_image_generation(generation_settings)
@@ -243,7 +243,7 @@ async def json_request(
             method,
             url,
             # This is a bit of a hack, but not sure if there's a better way.
-            json=json_loads(data.model_dump_json(exclude_unset=True, by_alias=True)),
+            json=json_loads(data.model_dump_json(exclude_none=True, by_alias=True)),
         )
     else:
         response = await session.request(method, url, json=data)

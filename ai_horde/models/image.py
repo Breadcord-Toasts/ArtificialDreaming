@@ -41,6 +41,11 @@ class Base64Image(str):
         return core_schema.no_info_after_validator_function(cls, handler(str))
 
 
+Base64OrURLImage = Annotated[Base64Image | str, AfterValidator(
+    lambda value: value if value.startswith("https://") else Base64Image(value)
+)]
+
+
 # region Image generation
 class SourceProcessing(StrEnum):
     IMG2IMG = "img2img"
@@ -442,7 +447,7 @@ class GeneratedImageMetadata(HordeModel):
 
 
 class FinishedGeneration(HordeModel):
-    img: Base64Image = Field(
+    img: Base64OrURLImage = Field(
         description=(
             "The generated image. "
             "This can be either the image data as a Base64-encoded .webp file or a URL to the image, "
@@ -672,5 +677,3 @@ class InterrogationStatus(HordeSuccess):
         description="A list of forms with their results.",
     )
 # endregion
-
-

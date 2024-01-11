@@ -1,4 +1,6 @@
+import asyncio
 import math
+import time
 from logging import Logger
 from typing import Any, NamedTuple
 
@@ -15,7 +17,7 @@ from .ai_horde.models.image import (
     LoRA,
     Sampler,
     TextualInversion,
-    TIPlacement,
+    TIPlacement, Base64Image, ImageGenerationStatus,
 )
 
 
@@ -23,6 +25,7 @@ class APIPackage(NamedTuple):
     horde: HordeAPI
     civitai: CivitAIAPI
     cache: Cache
+    logger: Logger
 
 
 class CustomModelsModal(discord.ui.Modal, title="Custom model"):
@@ -271,7 +274,7 @@ class BasicOptionsModal(discord.ui.Modal, title="More generation options"):
         self.add_item(self.steps)
 
         self.image_count = discord.ui.TextInput(
-            label="Image count - 1 \u2264 images \u2264 100",
+            label="Image count - 1 \u2264 images \u2264 10",
             placeholder="Enter an image count...",
             required=False,
             default=self.current_request.params.image_count,
@@ -284,11 +287,11 @@ class BasicOptionsModal(discord.ui.Modal, title="More generation options"):
         self.current_request.params.seed = self.seed.value or None
 
         steps = self.steps.value.strip()
-        steps = None if steps else max(1, min(100, int(steps)))
+        steps = max(1, min(100, int(steps))) if steps else None
         self.current_request.params.steps = steps
 
         image_count = self.image_count.value.strip()
-        image_count = None if image_count else max(1, min(20, int(image_count)))
+        image_count = max(1, min(10, int(image_count))) if image_count else None
         self.current_request.params.image_count = image_count
 
         await defer_and_edit(interaction, self.current_request, self.apis)
@@ -335,7 +338,7 @@ class AdvancedOptionsModal(discord.ui.Modal, title="More generation options"):
 
     async def on_submit(self, interaction: Interaction, /) -> None:
         cfg_scale = self.cfg_scale.value.strip()
-        cfg_scale = None if cfg_scale else max(0.0, min(100.0, float(cfg_scale)))
+        cfg_scale = max(0.0, min(100.0, float(cfg_scale))) if cfg_scale else None
         self.current_request.params.cfg_scale = cfg_scale
 
         if (key := self.sampler.value.strip().upper()) in Sampler.__members__:
@@ -345,7 +348,7 @@ class AdvancedOptionsModal(discord.ui.Modal, title="More generation options"):
         self.current_request.params.sampler = sampler
 
         denoising_strength = self.denoising_strength.value.strip()
-        denoising_strength = None if denoising_strength else max(0.01, min(1.0, float(denoising_strength)))
+        denoising_strength = max(0.01, min(1.0, float(denoising_strength))) if denoising_strength else None
         self.current_request.params.denoising_strength = denoising_strength
 
         await defer_and_edit(interaction, self.current_request, self.apis)
@@ -376,6 +379,7 @@ class GenerationSettingsView(discord.ui.View):
             horde=horde_api,
             civitai=civitai_api,
             cache=cache,
+            logger=logger,
         )
 
         self._default_request = default_request
@@ -419,7 +423,7 @@ class GenerationSettingsView(discord.ui.View):
         button.style = discord.ButtonStyle.green if self.generation_request.nsfw else discord.ButtonStyle.red
         button.label = f"Allow NSFW: {'Yes' if self.generation_request.nsfw else 'No'}"
         await interaction.response.defer()
-        await interaction.message.edit(view=self, embeds=await embed_from_request(self.generation_request, self.apis))
+        await interaction.message.edit(view=self, embeds=await get_settings_embed(self.generation_request, self.apis))
 
     @discord.ui.button(label="Change LoRAs and TIs", style=discord.ButtonStyle.green, row=2)
     async def modify_loras_or_tis(self, interaction: discord.Interaction, _):
@@ -464,9 +468,9 @@ class GenerationSettingsView(discord.ui.View):
             if hasattr(item, "enabled"):
                 item.enabled = False
 
-        # TODO: Stop and return this interaction for a followup generation response?
-        #  Also remove children instead of disabling them
-        await defer_and_edit(interaction, self.generation_request, self.apis)
+        await interaction.response.defer()
+        await interaction.message.edit(view=self)
+        await process_generation(self.generation_request, apis=self.apis, reply_to=interaction.message)
 
     @discord.ui.button(label="Get JSON", style=discord.ButtonStyle.gray, row=4, emoji="\N{PAGE FACING UP}")
     async def get_json(self, interaction: discord.Interaction, _):
@@ -591,6 +595,7 @@ class LoRAPickerView(discord.ui.View):
             horde=horde_api,
             civitai=civitai_api,
             cache=cache,
+            logger=logger,
         )
 
         self.loras = default_loras or []
@@ -657,7 +662,7 @@ async def defer_and_edit(
 ) -> None:
     if not responded_already:
         await interaction.response.defer()
-    await interaction.message.edit(embeds=await embed_from_request(generation_request, apis))
+    await interaction.message.edit(embeds=await get_settings_embed(generation_request, apis))
 
 
 async def edit_loras_tis(
@@ -671,7 +676,7 @@ async def edit_loras_tis(
     await interaction.message.edit(embeds=embeds[-10:])
 
 
-async def embed_from_request(generation_request: ImageGenerationRequest, apis: APIPackage) -> list[discord.Embed]:
+async def get_settings_embed(generation_request: ImageGenerationRequest, apis: APIPackage) -> list[discord.Embed]:
     description = []
 
     def append_truthy(key_name: str, value: Any):
@@ -693,9 +698,9 @@ async def embed_from_request(generation_request: ImageGenerationRequest, apis: A
 
     embeds = [
         discord.Embed(
-            title="Image generation",
+            title="Generation settings",
             description="\n".join(description),
-            color=discord.Color.blurple(),
+            colour=discord.Colour.blurple(),
         ).set_footer(text="Click the buttons below to modify the request."),
     ]
 
@@ -710,8 +715,92 @@ async def embed_from_request(generation_request: ImageGenerationRequest, apis: A
         embeds.append(discord.Embed(
             title="LoRAs and TIs",
             description="Too many LoRAs and TIs to display.",
-            color=discord.Color.blurple(),
+            colour=discord.Colour.blurple(),
         ))
+    return embeds
+
+
+async def get_finished_embed(
+    generation_request: ImageGenerationRequest,
+    finished_generation: ImageGenerationStatus,
+    apis: APIPackage,
+) -> list[discord.Embed]:
+    description = []
+
+    def append_truthy(key_name: str, value: Any):
+        if value:
+            description.append(f"**{key_name}:** {value}")
+
+    append_truthy("Prompt", generation_request.positive_prompt)
+    append_truthy("Negative prompt", generation_request.negative_prompt)
+    append_truthy("Base seed", generation_request.params.seed)
+    if len(individual_seeds := [gen.seed for gen in finished_generation.generations]) > 1:
+        append_truthy("Individual seeds", ", ".join(individual_seeds))
+    append_truthy("NSFW", generation_request.nsfw)
+    append_truthy("Models", ", ".join(set(
+        generation.model
+        for generation in finished_generation.generations
+    )))
+    append_truthy(
+        "Resolution",
+        f"{generation_request.params.width or 512}x{generation_request.params.height or 512}",
+    )
+    append_truthy("Steps", generation_request.params.steps)
+    append_truthy("CFG scale", generation_request.params.cfg_scale)
+    append_truthy(
+        "Image count",
+        f"{finished_generation.finished}/{generation_request.params.image_count or 1}"
+    )
+    append_truthy("Denoising strength", generation_request.params.denoising_strength)
+    append_truthy("Sampler", sampler.value if (sampler := generation_request.params.sampler) else None)
+    append_truthy("LoRAs", ", ".join(lora.identifier for lora in generation_request.params.loras or []))
+    append_truthy(
+        "Textual inversions",
+        ", ".join(ti.identifier for ti in generation_request.params.textual_inversions or [])
+    )
+    description.append("\n")
+    append_truthy("Finished by", ", ".join(set(
+        generation.worker_id
+        for generation in finished_generation.generations
+    )))
+
+    embeds = [
+        discord.Embed(
+            title="Generation finished",
+            description="\n".join(description),
+            colour=discord.Colour.green(),
+        ),
+    ]
+
+    lora_ti_embeds = await get_lora_ti_embeds(
+        apis=apis,
+        loras=generation_request.params.loras,
+        textual_inversions=generation_request.params.textual_inversions,
+    )
+    if len(lora_ti_embeds) < 10 - len(embeds):
+        embeds.extend(lora_ti_embeds)
+    else:
+        embeds.append(discord.Embed(
+            title="LoRAs and TIs",
+            description="Too many LoRAs and TIs to display.",
+            colour=discord.Colour.blurple(),
+        ))
+    return embeds
+
+
+async def get_lora_ti_embeds(
+    *,
+    apis: APIPackage,
+    loras: list[LoRA] | None,
+    textual_inversions: list[TextualInversion] | None,
+) -> list[discord.Embed]:
+    # TODO: Make use cache
+    embeds = []
+    for lora in loras or []:
+        embeds.append(await get_lora_embed(lora, apis))
+    for textual_inversion in textual_inversions or []:
+        embeds.append(await get_ti_embed(textual_inversion, apis))
+
     return embeds
 
 
@@ -736,7 +825,7 @@ async def get_lora_embed(lora: LoRA, apis: APIPackage) -> discord.Embed:
                 f"**Strength (model):** {lora.strength_model}",
                 f"**Strength (clip):** {lora.strength_clip}",
             )),
-            colour=discord.Color.orange(),
+            colour=discord.Colour.orange(),
         ).set_thumbnail(url=next((image.url for image in images if not image.nsfw), None))
     else:
         return discord.Embed(
@@ -745,7 +834,7 @@ async def get_lora_embed(lora: LoRA, apis: APIPackage) -> discord.Embed:
                 f"**Strength (model):** {lora.strength_model}",
                 f"**Strength (clip):** {lora.strength_clip}",
             )),
-            colour=discord.Color.orange(),
+            colour=discord.Colour.orange(),
         )
 
 
@@ -763,7 +852,7 @@ async def get_ti_embed(textual_inversion: TextualInversion, apis: APIPackage) ->
                 f"**Strength:** {textual_inversion.strength}",
                 f"**Injection location:** {textual_inversion.injection_location}",
             )),
-            colour=discord.Color.blue(),
+            colour=discord.Colour.blue(),
         ).set_thumbnail(url=civitai_model.versions[0].images[0].url)
     else:
         return discord.Embed(
@@ -772,24 +861,8 @@ async def get_ti_embed(textual_inversion: TextualInversion, apis: APIPackage) ->
                 f"**Strength:** {textual_inversion.strength}",
                 f"**Injection location:** {textual_inversion.injection_location}",
             )),
-            colour=discord.Color.blue(),
+            colour=discord.Colour.blue(),
         )
-
-
-async def get_lora_ti_embeds(
-    *,
-    apis: APIPackage,
-    loras: list[LoRA] | None,
-    textual_inversions: list[TextualInversion] | None,
-) -> list[discord.Embed]:
-    # TODO: Make use cache
-    embeds = []
-    for lora in loras or []:
-        embeds.append(await get_lora_embed(lora, apis))
-    for textual_inversion in textual_inversions or []:
-        embeds.append(await get_ti_embed(textual_inversion, apis))
-
-    return embeds
 
 
 def check_truthy(value: str) -> bool | None:
@@ -799,3 +872,98 @@ def check_truthy(value: str) -> bool | None:
     if value.startswith(("f", "n")):
         return False
     return None
+
+
+class AttachmentDeletionView(discord.ui.View):
+    def __init__(
+        self,
+        *args,
+        required_votes: int = 1,
+        **kwargs,
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        self.required_votes = required_votes
+        self.already_voted: set[int] = set()
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        return interaction.user.id not in self.already_voted
+
+    @discord.ui.button(label="Delete", style=discord.ButtonStyle.red)
+    async def delete(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.already_voted.add(interaction.user.id)
+        button.label = f"Delete ({len(self.already_voted)}/{self.required_votes})"
+        if len(self.already_voted) < self.required_votes:
+            return
+        await interaction.response.defer()
+        await interaction.message.edit(view=None, attachments=[])
+
+
+async def process_generation(
+    generation_request: ImageGenerationRequest,
+    *,
+    apis: APIPackage,
+    reply_to: discord.Message,
+) -> discord.Message:
+    start_time = time.time()
+    queued_generation = await apis.horde.queue_image_generation(generation_request)
+
+    generic_wait_message = (
+        f"Please wait while your generation is being processed.\n"
+        f"Generation ID: {queued_generation.id}\n\n"
+    )
+    embed = discord.Embed(
+        title="Generating...",
+        description=generic_wait_message,
+        colour=discord.Colour.blurple(),
+    )
+    message = await reply_to.reply(embed=embed)
+
+    await asyncio.sleep(5)
+    finished_images = 0
+    requested_images = generation_request.params.image_count or 1
+
+    while True:
+        generation_check = await apis.horde.get_generation_status(queued_generation.id)
+
+        if generation_check.finished != finished_images and not generation_check.done:
+            finished_images = generation_check.finished
+            embed.description = (
+                f"{generic_wait_message}"
+                f"Generated {finished_images}/{requested_images} images."
+            )
+            await message.edit(embed=embed)
+
+        if generation_check.done:
+            break
+
+        # Generations time out after 10 minutes
+        if time.time() - start_time > 60 * 10:
+            await message.edit(embed=discord.Embed(
+                title="Generation timed out.",
+                description="Please try again, or try a different model.",
+                colour=discord.Colour.red(),
+            ))
+            return message
+
+        await asyncio.sleep(5)
+
+    generation_status = await apis.horde.get_generation_status(queued_generation.id, full=True)
+
+    # TODO: Add support for r2 images
+    if not isinstance(generation_status.generations[0].img, Base64Image):
+        raise ValueError("Generation did not return a base64 image. Ensure the r2 option is not being set.")
+
+    embeds = await get_finished_embed(generation_request, generation_status, apis)
+    embeds[0].set_footer(text=f"Time taken: {round(time.time() - start_time, 2)}s")
+
+    await message.edit(
+        embeds=embeds,
+        attachments=[
+            discord.File(
+                fp=generation.img.to_bytesio(),
+                filename=f"{generation.id}.webp",
+            )
+            for generation in generation_status.generations
+        ],
+        view=AttachmentDeletionView(required_votes=2),
+    )

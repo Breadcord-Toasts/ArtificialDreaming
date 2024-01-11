@@ -150,6 +150,7 @@ class ArtificialDreaming(breadcord.module.ModuleCog):
                 karras=True,
             ),
             replacement_filter=True,
+            r2=False,
         )
         view = GenerationSettingsView(
             logger=self.logger,
