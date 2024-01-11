@@ -136,7 +136,13 @@ class ArtificialDreaming(breadcord.module.ModuleCog):
         )
 
     @commands.hybrid_command()
-    async def advanced_generate(self, ctx: commands.Context, *, prompt: str, negative_prompt: str | None = None) -> None:
+    async def advanced_generate(
+        self,
+        ctx: commands.Context,
+        *,
+        prompt: str,
+        negative_prompt: str | None = None
+    ) -> None:
         generation_request = ImageGenerationRequest(
             positive_prompt=prompt,
             negative_prompt=negative_prompt,
