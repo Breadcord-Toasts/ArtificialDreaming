@@ -5,7 +5,7 @@ import discord
 from discord.ext import commands, tasks
 
 import breadcord
-from .advanced_generate import APIPackage, GenerationSettingsView, embed_from_request
+from .advanced_generate import APIPackage, GenerationSettingsView, get_settings_embed
 from .ai_horde.cache import Cache
 from .ai_horde.interface import CivitAIAPI, HordeAPI
 from .ai_horde.models.civitai import ModelType
@@ -162,7 +162,10 @@ class ArtificialDreaming(breadcord.module.ModuleCog):
         await ctx.reply(
             "Chose generation settings",
             view=view,
-            embeds=await embed_from_request(generation_request, APIPackage(self.horde, self.civitai, self.cache)),
+            embeds=await get_settings_embed(
+                generation_request,
+                APIPackage(self.horde, self.civitai, self.cache, self.logger),
+            ),
         )
 
 
