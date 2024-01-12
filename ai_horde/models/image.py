@@ -3,13 +3,14 @@ from __future__ import annotations
 import io
 from base64 import b64decode, b64encode
 from enum import StrEnum
-from typing import Annotated, Literal, TypeVar, Any
+from typing import Annotated, Any, Literal, TypeVar
 
 from pydantic import (
     BeforeValidator,
     Field,
     computed_field,
-    conlist, field_validator,
+    conlist,
+    field_validator,
 )
 from pydantic_core import CoreSchema, core_schema
 

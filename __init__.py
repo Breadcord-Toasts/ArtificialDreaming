@@ -141,7 +141,7 @@ class ArtificialDreaming(breadcord.module.ModuleCog):
         ctx: commands.Context,
         *,
         prompt: str,
-        negative_prompt: str | None = None
+        negative_prompt: str | None = None,
     ) -> None:
         generation_request = ImageGenerationRequest(
             positive_prompt=prompt,

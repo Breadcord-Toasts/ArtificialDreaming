@@ -14,12 +14,14 @@ from .ai_horde.interface import CivitAIAPI, HordeAPI
 from .ai_horde.models.civitai import CivitAIModel, CivitAIModelVersion, ModelType
 from .ai_horde.models.horde_meta import ActiveModel
 from .ai_horde.models.image import (
+    Base64Image,
     ImageGenerationParams,
     ImageGenerationRequest,
+    ImageGenerationStatus,
     LoRA,
     Sampler,
     TextualInversion,
-    TIPlacement, Base64Image, ImageGenerationStatus,
+    TIPlacement,
 )
 
 
@@ -719,10 +721,10 @@ async def get_finished_embed(
     if len(individual_seeds := [gen.seed for gen in finished_generation.generations]) > 1:
         append_truthy("Individual seeds", ", ".join(individual_seeds))
     append_truthy("NSFW", generation_request.nsfw)
-    append_truthy("Models", ", ".join(set(
+    append_truthy("Models", ", ".join({
         generation.model
         for generation in finished_generation.generations
-    )))
+    }))
     append_truthy(
         "Resolution",
         f"{generation_request.params.width or 512}x{generation_request.params.height or 512}",
@@ -731,20 +733,20 @@ async def get_finished_embed(
     append_truthy("CFG scale", generation_request.params.cfg_scale)
     append_truthy(
         "Image count",
-        f"{finished_generation.finished}/{generation_request.params.image_count or 1}"
+        f"{finished_generation.finished}/{generation_request.params.image_count or 1}",
     )
     append_truthy("Denoising strength", generation_request.params.denoising_strength)
     append_truthy("Sampler", sampler.value if (sampler := generation_request.params.sampler) else None)
     append_truthy("LoRAs", ", ".join(lora.identifier for lora in generation_request.params.loras or []))
     append_truthy(
         "Textual inversions",
-        ", ".join(ti.identifier for ti in generation_request.params.textual_inversions or [])
+        ", ".join(ti.identifier for ti in generation_request.params.textual_inversions or []),
     )
     description.append("\n")
-    append_truthy("Finished by", ", ".join(set(
+    append_truthy("Finished by", ", ".join({
         generation.worker_id
         for generation in finished_generation.generations
-    )))
+    }))
 
     embeds = [
         discord.Embed(
@@ -951,3 +953,4 @@ async def process_generation(
         ],
         view=AttachmentDeletionView(required_votes=2),
     )
+    return None
