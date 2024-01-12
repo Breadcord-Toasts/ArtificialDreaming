@@ -1,9 +1,16 @@
+from __future__ import annotations
+
 import io
 from base64 import b64decode, b64encode
 from enum import StrEnum
-from typing import Annotated, Literal, TypeVar
+from typing import Annotated, Literal, TypeVar, Any
 
-from pydantic import AfterValidator, Field, GetCoreSchemaHandler, computed_field, conlist
+from pydantic import (
+    BeforeValidator,
+    Field,
+    computed_field,
+    conlist, field_validator,
+)
 from pydantic_core import CoreSchema, core_schema
 
 from .general import HordeModel, HordeRequest, HordeSuccess, RenamedField
@@ -16,34 +23,38 @@ def unique_list_validator(value: list[_T]) -> list[_T]:
     return value
 
 
-UniqueList = Annotated[list[_T], AfterValidator(unique_list_validator)]
+UniqueList = Annotated[list[_T], BeforeValidator(unique_list_validator)]
 
 
-class Base64Image(str):
+class Base64Image:
     """A Base64-encoded image."""
 
-    def __new__(cls, data: str | bytes):
+    def __init__(self, data: str | bytes) -> None:
         if isinstance(data, bytes):
             data = b64encode(data).decode()
-        return super().__new__(cls, data)
+        self.data: str = data
+
+    def __bytes__(self) -> bytes:
+        return b64decode(self.data)
+
+    def __repr__(self) -> str:
+        return f"<{self.__class__.__name__}>"
 
     def to_bytesio(self) -> io.BytesIO:
         return io.BytesIO(bytes(self))
 
-    def __bytes__(self) -> bytes:
-        return b64decode(self)
-
-    def __repr__(self) -> str:
-        return "<Base64Image>"
-
     @classmethod
-    def __get_pydantic_core_schema__(cls, _, handler: GetCoreSchemaHandler) -> CoreSchema:
-        return core_schema.no_info_after_validator_function(cls, handler(str))
-
-
-Base64OrURLImage = Annotated[Base64Image | str, AfterValidator(
-    lambda value: value if value.startswith("https://") else Base64Image(value)
-)]
+    def __get_pydantic_core_schema__(cls, source: type[Any], _) -> CoreSchema:
+        assert source is Base64Image
+        return core_schema.no_info_after_validator_function(
+            cls,
+            core_schema.str_schema(),
+            serialization=core_schema.plain_serializer_function_ser_schema(
+                lambda x: x.data,
+                info_arg=False,
+                return_schema=core_schema.str_schema(),
+            ),
+        )
 
 
 # region Image generation
@@ -447,13 +458,21 @@ class GeneratedImageMetadata(HordeModel):
 
 
 class FinishedGeneration(HordeModel):
-    img: Base64OrURLImage = Field(
+    img: Base64Image | str = Field(
         description=(
             "The generated image. "
             "This can be either the image data as a Base64-encoded .webp file or a URL to the image, "
             "depending on the `r2` parameter of the request."
         ),
     )
+
+    # noinspection PyNestedDecorators
+    @field_validator("img", mode="plain")
+    @classmethod
+    def validate_img(cls, value: str) -> Base64Image | str:
+        if value.startswith("http://") or value.startswith("https://"):
+            return value
+        return Base64Image(value)
 
     id: str = Field(
         description="The ID of the generated image.",

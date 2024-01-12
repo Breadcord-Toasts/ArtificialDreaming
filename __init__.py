@@ -150,23 +150,17 @@ class ArtificialDreaming(breadcord.module.ModuleCog):
                 karras=True,
             ),
             replacement_filter=True,
-            r2=False,
         )
+        apis = APIPackage(self.horde, self.civitai, self.cache, self.logger, self.generic_session)
         view = GenerationSettingsView(
-            logger=self.logger,
-            cache=self.cache,
-            horde_api=self.horde,
-            civitai_api=self.civitai,
+            apis=apis,
             default_request=generation_request,
             author_id=ctx.author.id,
         )
         await ctx.reply(
-            "Chose generation settings",
+            "Choose generation settings",
             view=view,
-            embeds=await get_settings_embed(
-                generation_request,
-                APIPackage(self.horde, self.civitai, self.cache, self.logger),
-            ),
+            embeds=await get_settings_embed(generation_request, apis),
         )
 
 

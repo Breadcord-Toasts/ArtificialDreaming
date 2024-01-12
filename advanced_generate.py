@@ -1,9 +1,11 @@
 import asyncio
+import io
 import math
 import time
 from logging import Logger
 from typing import Any, NamedTuple
 
+import aiohttp
 import discord
 from discord import Interaction
 
@@ -26,6 +28,7 @@ class APIPackage(NamedTuple):
     civitai: CivitAIAPI
     cache: Cache
     logger: Logger
+    session: aiohttp.ClientSession
 
 
 class CustomModelsModal(discord.ui.Modal, title="Custom model"):
@@ -361,26 +364,18 @@ class AdvancedOptionsModal(discord.ui.Modal, title="More generation options"):
 class GenerationSettingsView(discord.ui.View):
     def __init__(
         self,
-        logger: Logger,
-        cache: Cache,
-        horde_api: HordeAPI,
-        civitai_api: CivitAIAPI,
+        apis: APIPackage,
         default_request: ImageGenerationRequest,
         author_id: int,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
         self.author_id = author_id
-        self.logger = logger
-        self.cache = cache
-        self.horde_api = horde_api
-        self.civitai_api = civitai_api
-        self.apis = APIPackage(
-            horde=horde_api,
-            civitai=civitai_api,
-            cache=cache,
-            logger=logger,
-        )
+        self.apis = apis
+        self.logger = apis.logger
+        self.cache = apis.cache
+        self.horde_api = apis.horde
+        self.civitai_api = apis.civitai
 
         self._default_request = default_request
         self.generation_request = default_request
@@ -428,10 +423,7 @@ class GenerationSettingsView(discord.ui.View):
     @discord.ui.button(label="Change LoRAs and TIs", style=discord.ButtonStyle.green, row=2)
     async def modify_loras_or_tis(self, interaction: discord.Interaction, _):
         view = LoRAPickerView(
-            logger=self.logger,
-            cache=self.cache,
-            horde_api=self.horde_api,
-            civitai_api=self.civitai_api,
+            apis=self.apis,
             author_id=self.author_id,
             default_loras=self.generation_request.params.loras,
             default_tis=self.generation_request.params.textual_inversions,
@@ -578,10 +570,7 @@ class TextualInversionPickerModal(discord.ui.Modal, title="Textual Inversion"):
 class LoRAPickerView(discord.ui.View):
     def __init__(
         self,
-        logger: Logger,
-        cache: Cache,
-        horde_api: HordeAPI,
-        civitai_api: CivitAIAPI,
+        apis: APIPackage,
         author_id: int,
         default_loras: list[LoRA] | None,
         default_tis: list[TextualInversion] | None,
@@ -589,14 +578,7 @@ class LoRAPickerView(discord.ui.View):
     ) -> None:
         super().__init__(**kwargs)
         self.author_id = author_id
-        self.logger = logger
-        self.cache = cache
-        self.apis = APIPackage(
-            horde=horde_api,
-            civitai=civitai_api,
-            cache=cache,
-            logger=logger,
-        )
+        self.apis = apis
 
         self.loras = default_loras or []
         self.textual_inversions = default_tis or []
@@ -949,18 +931,20 @@ async def process_generation(
 
     generation_status = await apis.horde.get_generation_status(queued_generation.id, full=True)
 
-    # TODO: Add support for r2 images
-    if not isinstance(generation_status.generations[0].img, Base64Image):
-        raise ValueError("Generation did not return a base64 image. Ensure the r2 option is not being set.")
-
     embeds = await get_finished_embed(generation_request, generation_status, apis)
     embeds[0].set_footer(text=f"Time taken: {round(time.time() - start_time, 2)}s")
+
+    async def fetch_image(image: Base64Image | str) -> io.BytesIO:
+        if isinstance(image, Base64Image):
+            return image.to_bytesio()
+        async with apis.session.get(image) as response:
+            return io.BytesIO(await response.read())
 
     await message.edit(
         embeds=embeds,
         attachments=[
             discord.File(
-                fp=generation.img.to_bytesio(),
+                fp=await fetch_image(generation.img),
                 filename=f"{generation.id}.webp",
             )
             for generation in generation_status.generations
