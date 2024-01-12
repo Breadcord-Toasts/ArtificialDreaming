@@ -12,7 +12,7 @@ from pydantic import BaseModel, ValidationError
 from .interface import URL, CivitAIAPI, HordeAPI, JsonLike
 from .models.civitai import CivitAIModel
 from .models.horde_meta import ActiveModel
-from .models.styles import Style, StyleCategory
+from .models.other_sources import ModelReference, Style, StyleCategory
 
 __all__ = (
     "Cache",
@@ -21,6 +21,9 @@ __all__ = (
 
 STYLES_LIST = URL("https://api.github.com/repos/Haidra-Org/AI-Horde-Styles/contents/styles.json")
 STYLE_CATEGORY_LIST = URL("https://api.github.com/repos/Haidra-Org/AI-Horde-Styles/contents/categories.json")
+IMAGE_MODEL_REFERENCE_LIST = URL(
+    "https://api.github.com/repos/Haidra-Org/AI-Horde-image-model-reference/contents/stable_diffusion.json",
+)
 
 AnyModel = TypeVar("AnyModel", bound=BaseModel)
 
@@ -45,13 +48,15 @@ class Cache:
         self.formatted_logs = formatted_cache
 
         self.styles: list[Style] = []
-        self.style_categories: list[StyleCategory] = []
-        self.horde_models: list[ActiveModel] = []
-        self.civitai_models: list[CivitAIModel] = []
-
         self._styles_file = self.storage_path / "styles.json"
+        self.style_categories: list[StyleCategory] = []
         self._style_categories_file = self.storage_path / "style_categories.json"
+        # TODO: Make this cover both image and text models, currently it's just image models
+        self.horde_model_reference: list[ModelReference] = []
+        self._horde_model_reference_file = self.storage_path / "model_reference.json"
+        self.horde_models: list[ActiveModel] = []
         self._horde_models_file = self.storage_path / "horde_models.json"
+        self.civitai_models: list[CivitAIModel] = []
         self._civitai_models_file = self.storage_path / "civitai_models.json"
 
     async def update(self) -> None:
@@ -59,6 +64,7 @@ class Cache:
         await asyncio.gather(
             self.update_styles(),
             self.update_style_categories(),
+            self.update_horde_model_reference(),
             self.update_horde_models(),
             self.update_civitai_models(),
         )
@@ -93,6 +99,28 @@ class Cache:
         self.style_categories = await fetch_github_json_file(self.session, STYLE_CATEGORY_LIST)
         await self._open_and_dump(self._style_categories_file, self.style_categories)
 
+    async def update_horde_model_reference(self) -> None:
+        if not file_outdated(self._horde_model_reference_file):
+            if not self.horde_model_reference:
+                self.horde_model_reference = await self.load_cache(
+                    self._horde_model_reference_file,
+                    model=ModelReference,
+                )
+            return
+
+        self.logger.info("Fetching horde model reference...")
+        raw_reference = await fetch_github_json_file(self.session, IMAGE_MODEL_REFERENCE_LIST)
+        raw_reference = raw_reference.values()  # Dict not a list, but keys are redundant
+        self.horde_model_reference, errors = self._validate_dicts(raw_reference, ModelReference)
+
+        if not errors:
+            await self._open_and_dump(self._horde_model_reference_file, [
+                json.loads(model.model_dump_json(by_alias=False))
+                for model in self.horde_model_reference
+            ])
+        else:
+            self.logger.warning(f"Failed to validate {len(errors)} models, not saving to cache.")
+
     async def update_horde_models(self) -> None:
         if not file_outdated(self._horde_models_file, timeout_seconds=60 * 30):
             if not self.horde_models:
@@ -125,12 +153,18 @@ class Cache:
             for model in self.civitai_models
         ])
 
-    async def load_cache(self, path: Path, *, model: type[BaseModel] | None = None) -> JsonLike | BaseModel:
+    async def load_cache(
+        self,
+        path: Path,
+        *,
+        model: type[BaseModel] | None = None,
+        strict: bool = False,
+    ) -> JsonLike | BaseModel:
         self.logger.debug(f"Loading cache file {path}")
         async with aiofiles.open(path, encoding="utf-8") as file:
             data = json.loads(await file.read())
             if model is not None:
-                return [model.model_validate(item) for item in data]
+                return [model.model_validate(item, strict=strict) for item in data]
             return data
 
     async def _open_and_dump(self, path: Path, data: JsonLike) -> None:
@@ -142,12 +176,14 @@ class Cache:
         self,
         data: Iterable[JsonLike],
         model: type[AnyModel],
+        *,
+        strict: bool = False,
     ) -> tuple[list[AnyModel], list[Exception]]:
         validated = []
         errors = []
         for item in data:
             try:
-                validated.append(model.model_validate(item))
+                validated.append(model.model_validate(item, strict=strict))
             except ValidationError as error:
                 self.logger.exception(f"Failed to validate {model.__name__} {item}")
                 errors.append(error)

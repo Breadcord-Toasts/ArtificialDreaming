@@ -179,9 +179,8 @@ class CivitAIAPI:
         self.session = session
         self.logger = logger
 
-    async def _fetch_paginated_json_list(self, url: URL, *, pages: int = 1) -> list[JsonLike]:
+    async def _fetch_paginated_json_list(self, url: URL, *, pages: int = 1) -> AsyncGenerator[JsonLike, None, None]:
         total_pages = -1
-        items = []
         for page in range(1, pages + 1):
             if total_pages != -1 and page > total_pages:
                 break
@@ -193,9 +192,8 @@ class CivitAIAPI:
             page_items = json.get("items", [])
             if not page_items or url is None:
                 break
-            items.extend(page_items)
-
-        return items
+            for item in page_items:
+                yield item
 
     # noinspection PyShadowingBuiltins
     async def get_models(
@@ -208,11 +206,10 @@ class CivitAIAPI:
         if type is not None:
             url = url.set_params(types=type.value)
 
-        models = await self._fetch_paginated_json_list(
-            url,
-            pages=pages,
-        )
-        return [CivitAIModel.model_validate(model) for model in models]
+        models = []
+        async for model in self._fetch_paginated_json_list(url, pages=pages):
+            models.append(CivitAIModel.model_validate(model))
+        return models
 
     async def get_model(self, model_id: int | str) -> CivitAIModel | None:
         json = await json_request(self.session, HTTPMethod.GET, CIVITAI_API_DOMAIN / "v1/models" / model_id)

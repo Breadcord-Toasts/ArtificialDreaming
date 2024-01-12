@@ -1,11 +1,13 @@
-from typing import Any
+from enum import Enum
+from typing import Any, Literal
 
 from pydantic import Field, model_validator
 
-from .general import HordeModel
+from .general import HordeModel, RenamedField
 from .image import LoRA, Sampler, TextualInversion
 
 
+# region Styles
 class Style(HordeModel):
     name: str = Field(
         min_length=1,
@@ -93,14 +95,94 @@ class Style(HordeModel):
         default=None,
         description="If true, enable karras noise scheduling tweaks.",
     )
-    textual_inversions: list[TextualInversion] | None = Field(
+    textual_inversions: list[TextualInversion] | None = RenamedField(
         default=None,
         description="A list of Textual Inversions to use when generating this request.",
-        validation_alias="tis",
+        renamed_to="textual_inversions", original_name="tis",
     )
 
 
 StyleCategory = dict[str, list[str]]
+# endregion
+
+
+# region Model Reference
+class SupportedFeature(Enum):
+    HIRES_FIX = "hires_fix"
+    LORAS = "loras"
+    INPAINTING = "inpainting"
+    CONTROLNET = "controlnet"
+
+
+class ModelReferenceFile(HordeModel):
+    path: str = Field(
+        description="Model file filename.",
+    )
+    sha256sum: str | None = Field(
+        default=None,
+        description="SHA256 hash of the file.",
+    )
+    md5sum: str | None = Field(
+        default=None,
+        description="MD5 hash of the file.",
+    )
+
+
+class ModelReferenceDownload(HordeModel):
+    file_name: str
+    file_path: str
+    file_url: str
+
+
+class ModelReferenceConfig(HordeModel):
+    files: list[ModelReferenceFile]
+    download: list[ModelReferenceDownload]
+
+
+class ModelReference(HordeModel):
+    name: str = Field(
+        description="The model name, as it's known by the horde.",
+    )
+    description: str = Field(
+        description="A description of the model.",
+    )
+    baseline: str = Field(
+        description="Name of the model this one is based on.",
+    )
+    homepage: str | None = None
+    version: str
+    nsfw: bool
+    style: Literal["generalist", "anime", "realistic", "artistic", "furry", "other"] | str = Field(
+        description="The style of the model's generations.",
+    )
+    type: Literal["ckpt"] = Field(
+        description="The model file type.",
+    )
+    showcases: list[str] = Field(
+        default=[],
+        description="A list of image URLs showcasing outputs form the model.",
+    )
+    config: ModelReferenceConfig
+    available: bool | None = None
+    size_on_disk_bytes: int | None = None
+    tags: list[str] = Field(
+        default=[],
+        description="A list of tags describing the model.",
+    )
+    # TODO: Rename to "triggers"
+    trigger: list[str] = Field(
+        default=[],
+        description="A list of model trigger words.",
+    )
+    # TODO: Rename to "unsupported_features"
+    features_not_supported: list[SupportedFeature] = Field(
+        default=[],
+        description="A list unsupported features.",
+    )
+    download_all: bool
+    inpainting: bool
+    min_bridge_version: int | None = None
+# endregion
 
 
 def last_split(string: str, sep: str) -> list[str]:

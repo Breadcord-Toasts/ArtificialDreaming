@@ -5,6 +5,8 @@ from pydantic import Field as PydanticField
 
 
 class HordeModel(BaseModel):
+    # model_config = ConfigDict(extra="forbid")
+
     def model_dump(self, *args, by_alias: bool = True, **kwargs) -> dict[str, Any]:
         return super().model_dump(*args, by_alias=by_alias, **kwargs)
 
