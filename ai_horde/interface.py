@@ -44,7 +44,7 @@ class URL(str):
         return self.__class__(url._replace(query=urlencode(query_params)).geturl())
 
 
-HORDE_API_BASE = URL("https://stablehorde.net/api/")
+HORDE_API_BASE = URL("https://aihorde.net/api/")
 CIVITAI_API_DOMAIN = URL("https://civitai.com/api/")
 
 JsonLike = dict[str, "JsonLike"] | list["JsonLike"] | str | int | float | bool | None
