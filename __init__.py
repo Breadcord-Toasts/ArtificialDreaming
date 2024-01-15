@@ -1,11 +1,9 @@
-import io
-
 import aiohttp
 import discord
 from discord.ext import commands, tasks
 
 import breadcord
-from .advanced_generate import APIPackage, GenerationSettingsView, get_settings_embed
+from .advanced_generate import APIPackage, GenerationSettingsView, get_settings_embeds
 from .ai_horde.cache import Cache
 from .ai_horde.interface import CivitAIAPI, HordeAPI
 from .ai_horde.models.civitai import ModelType
@@ -21,7 +19,7 @@ from .ai_horde.models.image import (
     InterrogationType,
     LoRA,
     Sampler,
-    TextualInversion,
+    TextualInversion, CaptionResult,
 )
 
 
@@ -29,11 +27,6 @@ from .ai_horde.models.image import (
 # TODO: Allow seeing previews for models, get data from https://github.com/Haidra-Org/AI-Horde-image-model-reference
 #  This can also be used to provide descriptions to models in the generation command.
 #  Make sure to cache it.
-
-
-async def file_from_url(session: aiohttp.ClientSession, url: str) -> io.BytesIO:
-    async with session.get(url) as response:
-        return io.BytesIO(await response.read())
 
 
 class ArtificialDreaming(breadcord.module.ModuleCog):
@@ -116,23 +109,19 @@ class ArtificialDreaming(breadcord.module.ModuleCog):
         await response.edit(content="Finished generation.")
 
     @commands.hybrid_command()
-    async def remove_bg(self, ctx: commands.Context, image_url: str) -> None:
+    async def describe(self, ctx: commands.Context, image_url: str) -> None:
         response = await ctx.reply("Interrogating... Please wait.")
 
         finished_interrogation = await self.horde.interrogate(InterrogationRequest(
             image_url=image_url,
             forms=[
-                InterrogationRequestForm(name=InterrogationType.GFPGAN),
+                InterrogationRequestForm(name=InterrogationType.CAPTION),
             ],
         ))
-        result: GenericProcessedImageResult = finished_interrogation.forms[0].result
+        result: CaptionResult = finished_interrogation.forms[0].result
 
         await response.edit(
-            content="Interrogated image.",
-            attachments=[discord.File(
-                await file_from_url(self.generic_session, result.image_url),
-                filename="image.webp",
-            )],
+            content=result.caption
         )
 
     @commands.hybrid_command()
@@ -143,24 +132,26 @@ class ArtificialDreaming(breadcord.module.ModuleCog):
         prompt: str,
         negative_prompt: str | None = None,
     ) -> None:
+        source_image = None
+        if ctx.message.attachments:
+            async with self.generic_session.get(ctx.message.attachments[0].url) as response:
+                source_image = Base64Image(await response.read())
+
         generation_request = ImageGenerationRequest(
             positive_prompt=prompt,
             negative_prompt=negative_prompt,
+            source_image=source_image,
             params=ImageGenerationParams(
                 karras=True,
             ),
             replacement_filter=True,
         )
         apis = APIPackage(self.horde, self.civitai, self.cache, self.logger, self.generic_session)
-        view = GenerationSettingsView(
-            apis=apis,
-            default_request=generation_request,
-            author_id=ctx.author.id,
-        )
+        view = GenerationSettingsView(apis=apis, default_request=generation_request, author_id=ctx.author.id)
         await ctx.reply(
             "Choose generation settings",
             view=view,
-            embeds=await get_settings_embed(generation_request, apis),
+            embeds=await get_settings_embeds(generation_request, apis),
         )
 
 

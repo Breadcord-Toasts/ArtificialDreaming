@@ -11,6 +11,7 @@ from pydantic import (
     computed_field,
     conlist,
     field_validator,
+    model_validator
 )
 from pydantic_core import CoreSchema, core_schema
 
@@ -256,6 +257,10 @@ class ImageGenerationParams(HordeModel):
             "otherwise a control map will be generated."
         ),
     )
+    return_control_map: bool | None = Field(
+        default=None,
+        description="If true, the generated control map will be returned instead of the image.",
+    )
 
     clip_skip: int | None = Field(
         default=None,
@@ -296,7 +301,21 @@ class ImageGenerationRequest(HordeRequest):
 
     @prompt.setter
     def prompt(self, value: str) -> None:
-        self.positive_prompt, self.negative_prompt = value.split("###", 1)
+        values = value.split("###", 1)
+        self.positive_prompt = values[0]
+        if len(values) > 1:
+            self.negative_prompt = values[1]
+
+    # noinspection PyNestedDecorators
+    @model_validator(mode="before")
+    @classmethod
+    def prompt_validator(cls, values: dict[str, Any]) -> dict[str, Any]:
+        if "positive_prompt" not in values and "prompt" in values:
+            prompt_parts = values.pop("prompt").split("###", 1)
+            values["positive_prompt"] = prompt_parts[0]
+            if len(prompt_parts) > 1:
+                values["negative_prompt"] = prompt_parts[1]
+        return values
 
     positive_prompt: str = Field(
         min_length=1,

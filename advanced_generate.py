@@ -1,13 +1,17 @@
 import asyncio
+import contextlib
 import io
 import math
+import re
+import textwrap
 import time
 from logging import Logger
-from typing import Any, NamedTuple
+from typing import Any, NamedTuple, TypedDict
 
 import aiohttp
 import discord
 from discord import Interaction
+from pydantic import ValidationError
 
 from .ai_horde.cache import Cache
 from .ai_horde.interface import CivitAIAPI, HordeAPI
@@ -21,8 +25,27 @@ from .ai_horde.models.image import (
     LoRA,
     Sampler,
     TextualInversion,
-    TIPlacement,
+    TIPlacement, ControlType,
 )
+
+
+def strip_codeblock(string: str, /) -> str:
+    match = re.match(
+        r"```(?:json)?(.+)```",
+        string,
+        flags=re.DOTALL | re.IGNORECASE
+    )
+    if match is None:
+        return string
+
+    lines = match.group(1).splitlines()
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    while lines and not lines[-1].strip():
+        lines.pop()
+    code = "\n".join(lines)
+
+    return textwrap.dedent(code)
 
 
 class APIPackage(NamedTuple):
@@ -419,8 +442,23 @@ class GenerationSettingsView(discord.ui.View):
         self.generation_request.nsfw = button.style != discord.ButtonStyle.green
         button.style = discord.ButtonStyle.green if self.generation_request.nsfw else discord.ButtonStyle.red
         button.label = f"Allow NSFW: {'Yes' if self.generation_request.nsfw else 'No'}"
-        await interaction.response.defer()
-        await interaction.message.edit(view=self, embeds=await get_settings_embed(self.generation_request, self.apis))
+        await defer_and_edit(interaction, self.generation_request, self.apis)
+
+    @discord.ui.button(label="Source image", style=discord.ButtonStyle.green, row=2)
+    async def source_image(self, interaction: discord.Interaction, _):
+        view = SourceImageView(
+            apis=self.apis,
+            author_id=self.author_id,
+            generation_request=self.generation_request,
+        )
+        params = await get_source_image_params(self.generation_request, self.apis)
+        await interaction.response.send_message(
+            view=view,
+            embed=params["embed"],
+            files=params["attachments"],
+        )
+        await view.wait()
+        await defer_and_edit(interaction, self.generation_request, self.apis, responded_already=True, update_image=True)
 
     @discord.ui.button(label="Change LoRAs and TIs", style=discord.ButtonStyle.green, row=2)
     async def modify_loras_or_tis(self, interaction: discord.Interaction, _):
@@ -457,7 +495,7 @@ class GenerationSettingsView(discord.ui.View):
     @discord.ui.button(label="Generate", style=discord.ButtonStyle.green, row=4)
     async def generate(self, interaction: discord.Interaction, _):
         for item in self.children:
-            if hasattr(item, "disabled"):
+            if hasattr(item, "disabled") and item != self.get_json:
                 item.disabled = True
             if hasattr(item, "enabled"):
                 item.enabled = False
@@ -469,11 +507,65 @@ class GenerationSettingsView(discord.ui.View):
     @discord.ui.button(label="Get JSON", style=discord.ButtonStyle.gray, row=4, emoji="\N{PAGE FACING UP}")
     async def get_json(self, interaction: discord.Interaction, _):
         json = self.generation_request.model_dump_json(indent=4, exclude_none=True)
+        try:
+            await interaction.response.send_message(
+                f"AI horde request data: ```json\n{json}\n```",
+                ephemeral=True,
+            )
+        except discord.HTTPException:
+            await interaction.response.send_message(
+                "The request data is too large to send as a message, so it has been attached as a file.",
+                file=discord.File(
+                    io.BytesIO(json.encode("utf-8")),
+                    filename="request.json",
+                ),
+                ephemeral=True,
+            )
+
+    @discord.ui.button(label="Load JSON", style=discord.ButtonStyle.gray, row=4, emoji="\N{PAGE FACING UP}")
+    async def load_json(self, interaction: discord.Interaction, _):
+        timeout = 30
         await interaction.response.send_message(
-            f"AI horde request data: ```json\n{json}\n```",
-            ephemeral=True,
+            f"Please reply to this message with the JSON data to load either in a codeblock or as a file. \n"
+            f"This message will time out <t:{int(time.time() + timeout)}:R>.",
         )
-        # TODO: Allow inputting arbitrary json (through a new message asking for a reply?), and have it validated
+        request_message = await interaction.original_response()
+
+        def reply_check(message: discord.Message) -> bool:
+            if message.author.id != self.author_id or message.channel.id != interaction.channel_id:
+                return False
+            if not message.reference:
+                return False
+            if message.reference.message_id not in (request_message.id, interaction.message.id):
+                return False
+            return True
+
+        try:
+            reply = await interaction.client.wait_for("message", check=reply_check, timeout=timeout)
+        except asyncio.TimeoutError:
+            await request_message.delete()
+            return
+
+        if reply.attachments:
+            async with self.apis.session.get(reply.attachments[0].url) as response:
+                json = await response.read()
+        else:
+            json = strip_codeblock(reply.content)
+
+        try:
+            self.generation_request = ImageGenerationRequest.model_validate_json(json)
+        except ValidationError as error:
+            await reply.reply(
+                f"Failed to load JSON: "
+                f"{discord.utils.escape_markdown(str(error))}",
+            )
+            self.logger.exception("Failed to load JSON")
+            return
+
+        await request_message.delete()
+        with contextlib.suppress(discord.HTTPException):
+            await reply.delete()
+        await defer_and_edit(interaction, self.generation_request, self.apis, responded_already=True)
 
 
 class LoRAPickerModal(discord.ui.Modal, title="LoRA"):
@@ -637,16 +729,226 @@ class LoRAPickerView(discord.ui.View):
         self.stop()
 
 
+class ControlTypeSelect(discord.ui.Select):
+    def __init__(self, generation_request: ImageGenerationRequest) -> None:
+        self.generation_request = generation_request
+
+        super().__init__(
+            placeholder="Select a control type...",
+            options=[
+                discord.SelectOption(label="None"),
+                *(discord.SelectOption(label=control_type) for control_type in ControlType)
+            ],
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        self.generation_request.params.control_type = ControlType(self.values[0]) if self.values[0] != "None" else None
+        await interaction.response.defer()
+
+
+class SourceImageParams(TypedDict):
+    embed: discord.Embed
+    attachments: list[discord.File]
+
+
+async def get_source_image_params(generation_request: ImageGenerationRequest, apis: APIPackage) -> SourceImageParams:
+    return SourceImageParams(
+        embed=discord.Embed(
+            title="Source image",
+            description=(
+                f"Selected control type: "
+                f"{generation_request.params.control_type.value if generation_request.params.control_type else 'None'}"
+            ),
+        ).set_image(
+            url="attachment://source_image.webp",
+        ),
+        attachments=[discord.File(
+            generation_request.source_image.to_bytesio(),
+            filename="source_image.webp",
+        )] if generation_request.source_image else [],
+    )
+
+
+class SourceImageView(discord.ui.View):
+    def __init__(
+        self,
+        apis: APIPackage,
+        author_id: int,
+        generation_request: ImageGenerationRequest,
+        **kwargs,
+    ) -> None:
+        super().__init__(**kwargs)
+        self.author_id = author_id
+        self.apis = apis
+        self.generation_request = generation_request
+        # Update buttons to reflect current state
+        self.source_image = self.source_image
+
+        # TODO: If set to none when image_is_control is set, we need to change the button to its off state
+        self.control_type_select = ControlTypeSelect(generation_request)
+        self.add_item(self.control_type_select)
+
+    @property
+    def source_image(self) -> Base64Image | None:
+        return self.generation_request.source_image
+
+    @source_image.setter
+    def source_image(self, value: Base64Image | None) -> None:
+        self.generation_request.source_image = value
+        if value is None:
+            self.add_image.label = "Add image"
+            if self.delete_image in self.children:
+                self.remove_item(self.delete_image)
+        else:
+            self.add_image.label = "Change image"
+            if self.delete_image not in self.children:
+                self.add_item(self.delete_image)
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        return interaction.user.id == self.author_id
+
+    @discord.ui.button(label="Add image", style=discord.ButtonStyle.green, row=0)
+    async def add_image(self, interaction: discord.Interaction, _):
+        await interaction.response.defer()
+
+        timeout = 15
+        await interaction.message.edit(
+            embed=discord.Embed(
+                title="Awaiting image...",
+                description="Reply to this message with an image url or attachment",
+                colour=discord.Colour.orange(),
+            ).set_footer(text=f"Timeout: {timeout} seconds"),
+        )
+
+        def reply_check(message: discord.Message) -> bool:
+            if message.author.id != self.author_id or message.channel.id != interaction.channel_id:
+                return False
+            if not message.reference or message.reference.message_id != interaction.message.id:
+                return False
+            return True
+
+        try:
+            reply = await interaction.client.wait_for("message", check=reply_check, timeout=timeout)
+        except asyncio.TimeoutError:
+            await interaction.message.edit(**await get_source_image_params(self.generation_request, self.apis))
+            return
+
+        def get_image_url() -> str | None:
+            for attachment in reply.attachments:
+                if attachment.content_type.startswith("image/"):
+                    return attachment.proxy_url
+            for embed in reply.embeds:
+                if embed.thumbnail:
+                    return embed.thumbnail.proxy_url
+                if embed.image:
+                    return embed.image.proxy_url
+
+        # There appears to be a race condition here somehow?
+        await asyncio.sleep(0.5)
+        if (image_url := get_image_url()) is None:
+            await interaction.message.edit(
+                embed=discord.Embed(
+                    title="No image found",
+                    description="No image was found in your reply. Try again.",
+                    colour=discord.Colour.red(),
+                ),
+            )
+            await asyncio.sleep(5)
+            await interaction.message.edit(**await get_source_image_params(self.generation_request, self.apis), )
+            return
+
+        async with self.apis.session.get(image_url) as response:
+            if response.status != 200:
+                await interaction.message.edit(
+                    embed=discord.Embed(
+                        title="Failed to fetch image",
+                        description=f"Failed to fetch image from {image_url}.",
+                        colour=discord.Colour.red(),
+                    ),
+                )
+                await asyncio.sleep(5)
+                await interaction.message.edit(**await get_source_image_params(self.generation_request, self.apis))
+                return
+            image = Base64Image(await response.read())
+
+        await reply.delete()
+        self.source_image = image
+        await interaction.message.edit(view=self, **await get_source_image_params(self.generation_request, self.apis))
+
+    @discord.ui.button(label="Delete image", style=discord.ButtonStyle.red, row=0)
+    async def delete_image(self, interaction: discord.Interaction, _):
+        await interaction.response.defer()
+        self.source_image = None
+        await interaction.message.edit(view=self, **await get_source_image_params(self.generation_request, self.apis))
+
+    @discord.ui.button(label="Image is ControlNet map: No", style=discord.ButtonStyle.red, row=1)
+    async def controlnet_image_toggle(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if (
+            not self.generation_request.params.image_is_control
+            and self.generation_request.params.control_type is None
+        ):
+            await interaction.response.send_message(
+                "You must select a control type before you can use the image for ControlNet.",
+                ephemeral=True,
+            )
+            return
+        self.generation_request.params.image_is_control = button.style != discord.ButtonStyle.green
+        button.style = (
+            discord.ButtonStyle.green
+            if self.generation_request.params.image_is_control
+            else discord.ButtonStyle.red
+        )
+        button.label = f"Image is ControlNet map: {'Yes' if self.generation_request.params.image_is_control else 'No'}"
+        await interaction.response.defer()
+        await interaction.message.edit(view=self)
+
+    @discord.ui.button(label="Return control map: No", style=discord.ButtonStyle.red, row=1)
+    async def return_control_map_toggle(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if (
+            not self.generation_request.params.return_control_map
+            and self.generation_request.params.control_type is None
+        ):
+            await interaction.response.send_message(
+                "You must select a control type before you can return the control map.",
+                ephemeral=True,
+            )
+            return
+        self.generation_request.params.return_control_map = button.style != discord.ButtonStyle.green
+        button.style = (
+            discord.ButtonStyle.green
+            if self.generation_request.params.return_control_map
+            else discord.ButtonStyle.red
+        )
+        button.label = f"Return control map: {'Yes' if self.generation_request.params.return_control_map else 'No'}"
+        await interaction.response.defer()
+        await interaction.message.edit(view=self)
+
+    @discord.ui.button(label="Done", style=discord.ButtonStyle.gray, row=4)
+    async def done(self, interaction: discord.Interaction, _):
+        await interaction.response.defer()
+        await interaction.message.delete()
+        self.stop()
+
+
 async def defer_and_edit(
     interaction: discord.Interaction,
     generation_request: ImageGenerationRequest,
     apis: APIPackage,
     *,
     responded_already: bool = False,
+    update_image: bool = False
 ) -> None:
     if not responded_already:
         await interaction.response.defer()
-    await interaction.message.edit(embeds=await get_settings_embed(generation_request, apis))
+
+    params = {"embeds": await get_settings_embeds(generation_request, apis)}
+    if update_image:
+        params["attachments"] = [discord.File(
+            generation_request.source_image.to_bytesio(),
+            filename="source_image.webp",
+        )] if generation_request.source_image else []
+
+    await interaction.message.edit(**params)
 
 
 async def edit_loras_tis(
@@ -660,7 +962,7 @@ async def edit_loras_tis(
     await interaction.message.edit(embeds=embeds[-10:])
 
 
-async def get_settings_embed(generation_request: ImageGenerationRequest, apis: APIPackage) -> list[discord.Embed]:
+async def get_settings_embeds(generation_request: ImageGenerationRequest, apis: APIPackage) -> list[discord.Embed]:
     description = []
 
     def append_truthy(key_name: str, value: Any):
@@ -678,14 +980,21 @@ async def get_settings_embed(generation_request: ImageGenerationRequest, apis: A
     append_truthy("Steps", generation_request.params.steps)
     append_truthy("CFG scale", generation_request.params.cfg_scale)
     append_truthy("Image count", generation_request.params.image_count or 1)
+    append_truthy(
+        "Control type",
+        generation_request.params.control_type.value if generation_request.params.control_type else None
+    )
     append_truthy("Denoising strength", generation_request.params.denoising_strength)
+    append_truthy("Sampler", sampler.value if (sampler := generation_request.params.sampler) else None)
 
     embeds = [
         discord.Embed(
             title="Generation settings",
             description="\n".join(description),
             colour=discord.Colour.blurple(),
-        ).set_footer(text="Click the buttons below to modify the request."),
+        )
+        .set_footer(text="Click the buttons below to modify the request.")
+        .set_thumbnail(url="attachment://source_image.webp")
     ]
 
     lora_ti_embeds = await get_lora_ti_embeds(
@@ -953,4 +1262,3 @@ async def process_generation(
         ],
         view=AttachmentDeletionView(required_votes=2),
     )
-    return None
