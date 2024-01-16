@@ -122,7 +122,7 @@ class ModelSelect(discord.ui.Select):
         }
 
         super().__init__(
-            placeholder="Select a model...",
+            placeholder="Select models...",
             options=[
                 discord.SelectOption(
                     label=group_name,
@@ -437,14 +437,14 @@ class GenerationSettingsView(discord.ui.View):
             ),
         )
 
-    @discord.ui.button(label="Allow NSFW: No", style=discord.ButtonStyle.red, row=2)
+    @discord.ui.button(label="Allow NSFW: No", style=discord.ButtonStyle.grey, row=2)
     async def nsfw_toggle(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.generation_request.nsfw = button.style != discord.ButtonStyle.green
-        button.style = discord.ButtonStyle.green if self.generation_request.nsfw else discord.ButtonStyle.red
+        self.generation_request.nsfw = not self.generation_request.nsfw
+        button.style = discord.ButtonStyle.red if self.generation_request.nsfw else discord.ButtonStyle.grey
         button.label = f"Allow NSFW: {'Yes' if self.generation_request.nsfw else 'No'}"
-        await defer_and_edit(interaction, self.generation_request, self.apis)
+        await defer_and_edit(interaction, self.generation_request, self.apis, view=self)
 
-    @discord.ui.button(label="Source image", style=discord.ButtonStyle.green, row=2)
+    @discord.ui.button(label="Source image", style=discord.ButtonStyle.blurple, row=3)
     async def source_image(self, interaction: discord.Interaction, _):
         view = SourceImageView(
             apis=self.apis,
@@ -460,7 +460,7 @@ class GenerationSettingsView(discord.ui.View):
         await view.wait()
         await defer_and_edit(interaction, self.generation_request, self.apis, responded_already=True, update_image=True)
 
-    @discord.ui.button(label="Change LoRAs and TIs", style=discord.ButtonStyle.green, row=2)
+    @discord.ui.button(label="LoRAs and TIs", style=discord.ButtonStyle.blurple, row=3)
     async def modify_loras_or_tis(self, interaction: discord.Interaction, _):
         view = LoRAPickerView(
             apis=self.apis,
@@ -492,7 +492,7 @@ class GenerationSettingsView(discord.ui.View):
         self.generation_request.params.textual_inversions = view.textual_inversions
         await defer_and_edit(interaction, self.generation_request, self.apis, responded_already=True)
 
-    @discord.ui.button(label="Generate", style=discord.ButtonStyle.green, row=4)
+    @discord.ui.button(label="Generate", style=discord.ButtonStyle.green, row=4, emoji="\N{HEAVY CHECK MARK}")
     async def generate(self, interaction: discord.Interaction, _):
         for item in self.children:
             if hasattr(item, "disabled") and item != self.get_json:
@@ -504,7 +504,7 @@ class GenerationSettingsView(discord.ui.View):
         await interaction.message.edit(view=self)
         await process_generation(self.generation_request, apis=self.apis, reply_to=interaction.message)
 
-    @discord.ui.button(label="Get JSON", style=discord.ButtonStyle.gray, row=4, emoji="\N{PAGE FACING UP}")
+    @discord.ui.button(label="Get JSON", style=discord.ButtonStyle.grey, row=4, emoji="\N{INBOX TRAY}")
     async def get_json(self, interaction: discord.Interaction, _):
         json = self.generation_request.model_dump_json(indent=4, exclude_none=True)
         try:
@@ -516,13 +516,13 @@ class GenerationSettingsView(discord.ui.View):
             await interaction.response.send_message(
                 "The request data is too large to send as a message, so it has been attached as a file.",
                 file=discord.File(
-                    io.BytesIO(json.encode("utf-8")),
+                    io.BytesIO(json.encode()),
                     filename="request.json",
                 ),
                 ephemeral=True,
             )
 
-    @discord.ui.button(label="Load JSON", style=discord.ButtonStyle.gray, row=4, emoji="\N{PAGE FACING UP}")
+    @discord.ui.button(label="Load JSON", style=discord.ButtonStyle.grey, row=4, emoji="\N{OUTBOX TRAY}")
     async def load_json(self, interaction: discord.Interaction, _):
         timeout = 30
         await interaction.response.send_message(
@@ -554,6 +554,7 @@ class GenerationSettingsView(discord.ui.View):
 
         try:
             self.generation_request = ImageGenerationRequest.model_validate_json(json)
+            self.generation_request.replacement_filter = True
         except ValidationError as error:
             await reply.reply(
                 f"Failed to load JSON: "
@@ -722,8 +723,14 @@ class LoRAPickerView(discord.ui.View):
         interaction.message.embeds.pop()
         await interaction.message.edit(embeds=interaction.message.embeds)
 
-    @discord.ui.button(label="Done", style=discord.ButtonStyle.gray, row=4)
+    @discord.ui.button(label="Done", style=discord.ButtonStyle.green, row=4, emoji="\N{HEAVY CHECK MARK}")
     async def done(self, interaction: discord.Interaction, _):
+        await interaction.response.defer()
+        await interaction.message.delete()
+        self.stop()
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.red, row=4, emoji="\N{HEAVY MULTIPLICATION X}")
+    async def cancel(self, interaction: discord.Interaction, _):
         await interaction.response.defer()
         await interaction.message.delete()
         self.stop()
@@ -751,6 +758,7 @@ class SourceImageParams(TypedDict):
     attachments: list[discord.File]
 
 
+# noinspection PyUnusedLocal
 async def get_source_image_params(generation_request: ImageGenerationRequest, apis: APIPackage) -> SourceImageParams:
     return SourceImageParams(
         embed=discord.Embed(
@@ -923,8 +931,14 @@ class SourceImageView(discord.ui.View):
         await interaction.response.defer()
         await interaction.message.edit(view=self)
 
-    @discord.ui.button(label="Done", style=discord.ButtonStyle.gray, row=4)
+    @discord.ui.button(label="Done", style=discord.ButtonStyle.green, row=4, emoji="\N{HEAVY CHECK MARK}")
     async def done(self, interaction: discord.Interaction, _):
+        await interaction.response.defer()
+        await interaction.message.delete()
+        self.stop()
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.red, row=4, emoji="\N{HEAVY MULTIPLICATION X}")
+    async def cancel(self, interaction: discord.Interaction, _):
         await interaction.response.defer()
         await interaction.message.delete()
         self.stop()
@@ -935,20 +949,26 @@ async def defer_and_edit(
     generation_request: ImageGenerationRequest,
     apis: APIPackage,
     *,
+    view: discord.ui.View | None = None,
     responded_already: bool = False,
-    update_image: bool = False
+    update_image: bool = False,
 ) -> None:
     if not responded_already:
         await interaction.response.defer()
 
-    params = {"embeds": await get_settings_embeds(generation_request, apis)}
+    params = {}
     if update_image:
         params["attachments"] = [discord.File(
             generation_request.source_image.to_bytesio(),
             filename="source_image.webp",
         )] if generation_request.source_image else []
+    if view is not None:
+        params["view"] = view
 
-    await interaction.message.edit(**params)
+    await interaction.message.edit(
+        embeds=await get_settings_embeds(generation_request, apis),
+        **params,
+    )
 
 
 async def edit_loras_tis(
@@ -1200,6 +1220,7 @@ async def process_generation(
     start_time = time.time()
     queued_generation = await apis.horde.queue_image_generation(generation_request)
 
+    requested_images = generation_request.params.image_count or 1
     generic_wait_message = (
         f"Please wait while your generation is being processed.\n"
         f"Generation ID: {queued_generation.id}\n\n"
@@ -1212,22 +1233,18 @@ async def process_generation(
     message = await reply_to.reply(embed=embed)
 
     await asyncio.sleep(5)
-    finished_images = 0
-    requested_images = generation_request.params.image_count or 1
 
     while True:
         generation_check = await apis.horde.get_generation_status(queued_generation.id)
-
-        if generation_check.finished != finished_images and not generation_check.done:
-            finished_images = generation_check.finished
-            embed.description = (
-                f"{generic_wait_message}"
-                f"Generated {finished_images}/{requested_images} images."
-            )
-            await message.edit(embed=embed)
-
         if generation_check.done:
             break
+
+        embed.description = (
+            f"{generic_wait_message}"
+            f"Generated {generation_check.finished}/{requested_images} images. \n"
+            f"Estimated to be done <t:{int(time.time() + generation_check.wait_time)}:R>."
+        )
+        await message.edit(embed=embed)
 
         # Generations time out after 10 minutes
         if time.time() - start_time > 60 * 10:
