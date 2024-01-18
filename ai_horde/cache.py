@@ -12,7 +12,7 @@ from pydantic import BaseModel, ValidationError
 from .interface import URL, CivitAIAPI, HordeAPI, JsonLike
 from .models.civitai import CivitAIModel
 from .models.horde_meta import ActiveModel
-from .models.other_sources import ModelReference, Style, StyleCategory
+from .models.other_sources import ModelReference, Style
 
 __all__ = (
     "Cache",
@@ -47,9 +47,9 @@ class Cache:
         self.storage_path = storage_path
         self.formatted_logs = formatted_cache
 
-        self.styles: list[Style] = []
+        self.styles: dict[str, Style] = {}
         self._styles_file = self.storage_path / "styles.json"
-        self.style_categories: list[StyleCategory] = []
+        self.style_categories: dict[str, list[str]] = {}
         self._style_categories_file = self.storage_path / "style_categories.json"
         # TODO: Make this cover both image and text models, currently it's just image models
         self.horde_model_reference: list[ModelReference] = []
@@ -82,10 +82,10 @@ class Cache:
         self.styles, errors = self._validate_dicts(raw_styles, Style)
 
         if not errors:
-            await self._open_and_dump(self._styles_file, [
-                json.loads(style.model_dump_json(by_alias=False))
+            await self._open_and_dump(self._styles_file, {
+                style.name: json.loads(style.model_dump_json(by_alias=False))
                 for style in self.styles
-            ])
+            })
         else:
             self.logger.warning(f"Failed to validate {len(errors)} styles, not saving to cache.")
 
@@ -164,7 +164,13 @@ class Cache:
         async with aiofiles.open(path, encoding="utf-8") as file:
             data = json.loads(await file.read())
             if model is not None:
-                return [model.model_validate(item, strict=strict) for item in data]
+                if isinstance(data, list):
+                    return [model.model_validate(item, strict=strict) for item in data]
+                if isinstance(data, dict):
+                    return {
+                        key: model.model_validate(value, strict=strict)
+                        for key, value in data.items()
+                    }
             return data
 
     async def _open_and_dump(self, path: Path, data: JsonLike) -> None:

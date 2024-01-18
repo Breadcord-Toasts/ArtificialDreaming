@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 from base64 import b64decode, b64encode
 from enum import StrEnum
-from typing import Annotated, Any, Literal, TypeVar
+from typing import Annotated, Any, Literal, TypeVar, TYPE_CHECKING
 
 from pydantic import (
     BeforeValidator,
@@ -16,6 +16,9 @@ from pydantic import (
 from pydantic_core import CoreSchema, core_schema
 
 from .general import HordeModel, HordeRequest, HordeSuccess, RenamedField
+
+if TYPE_CHECKING:
+    from .other_sources import Style
 
 _T = TypeVar("_T")
 
@@ -181,10 +184,10 @@ class ImageGenerationParams(HordeModel):
         ge=64, le=3072, multiple_of=64,
     )
 
-    image_count: int | None = Field(
+    image_count: int | None = RenamedField(
         default=None,
         description="The number of images to generate.",
-        serialization_alias="n",
+        renamed_to="image_count", original_name="n",
         ge=1, le=20,
     )
 
@@ -198,10 +201,10 @@ class ImageGenerationParams(HordeModel):
         ge=1, le=1000,
     )
 
-    sampler: Sampler | str | None = Field(
+    sampler: Sampler | str | None = RenamedField(
         default=None,
         description="The sampler to use when generating this request.",
-        serialization_alias="sampler_name",
+        renamed_to="sampler", original_name="sampler_name",
     )
     steps: int | None = Field(
         default=None,
@@ -225,10 +228,10 @@ class ImageGenerationParams(HordeModel):
         ),
         ge=0.0, le=100.0,
     )
-    post_processors: UniqueList[PostProcessor] | None = Field(
+    post_processors: UniqueList[PostProcessor] | None = RenamedField(
         default=None,
         description="A list of post-processors to apply to the image, in the order specified.",
-        serialization_alias="post_processing",
+        renamed_to="post_processors", original_name="post_processing",
     )
     facefixer_strength: float | None = Field(
         default=None,
@@ -240,10 +243,10 @@ class ImageGenerationParams(HordeModel):
         default=None,
         description="A list of LoRAs to use when generating this request.",
     )
-    textual_inversions: list[TextualInversion] | None = Field(
+    textual_inversions: list[TextualInversion] | None = RenamedField(
         default=None,
         description="A list of Textual Inversions to use when generating this request.",
-        validation_alias="tis",
+        renamed_to="textual_inversions", original_name="tis",
     )
 
     control_type: ControlType | None = Field(
@@ -382,7 +385,7 @@ class ImageGenerationRequest(HordeRequest):
         ),
     )
 
-    workers: conlist(int, max_length=5) | None = Field(
+    workers: conlist(str, max_length=5) | None = Field(
         default=None,
         description="Up to 5 workers which are allowed to service this request.",
     )
@@ -429,6 +432,9 @@ class ImageGenerationRequest(HordeRequest):
         ),
     )
 
+    def apply_style(self, style: Style) -> ImageGenerationRequest:
+        return style.to_generation_request(self)
+
 
 class ImageGenerationResponse(HordeSuccess):
     id: str = Field(
@@ -449,6 +455,7 @@ class GenerationMetadataType(StrEnum):
     CENSORSHIP = "censorship"
     SOURCE_IMAGE = "source_image"
     SOURCE_MASK = "source_mask"
+    BATCH_INDEX = "batch_index"
     LORA = "lora"
     TI = "ti"
 
@@ -460,15 +467,16 @@ class GenerationMetadataValue(StrEnum):
     BASELINE_MISMATCH = "baseline_mismatch"
     CSAM = "csam"
     NSFW = "nsfw"
+    SEE_REF = "see_ref"
 
 
 class GeneratedImageMetadata(HordeModel):
     type: GenerationMetadataType = Field(
         description="The relevance of the metadata field.",
     )
-    cause: GenerationMetadataValue = Field(
+    cause: GenerationMetadataValue | str | None = Field(
+        default=None,
         description="The value of the metadata field.",
-        validation_alias="value",
     )
     ref: str | None = Field(
         default=None,
@@ -608,9 +616,9 @@ class InterrogationRequestForm(HordeModel):
 
 
 class InterrogationRequest(HordeRequest):
-    image_url: str = Field(
+    image_url: str = RenamedField(
         description="URL of the image to interrogate.",
-        serialization_alias="source_image",
+        renamed_to="image_url", original_name="source_image",
     )
     forms: list[InterrogationRequestForm] = Field(
         description="A list of forms to use when interrogating the image.",

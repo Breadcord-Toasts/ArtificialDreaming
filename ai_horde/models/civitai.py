@@ -32,6 +32,7 @@ class CivitAIFileFormat(Enum):
     SAFETENSOR = "SafeTensor"
     PICKLETENSOR = "PickleTensor"
     OTHER = "Other"
+    DIFFUSERS = "Diffusers"
 
 
 class NSFWLevel(Enum):

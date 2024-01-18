@@ -27,6 +27,7 @@ from .ai_horde.models.image import (
     TextualInversion,
     TIPlacement, ControlType,
 )
+from .helpers import fetch_image
 
 
 def strip_codeblock(string: str, /) -> str:
@@ -1262,17 +1263,11 @@ async def process_generation(
     embeds = await get_finished_embed(generation_request, generation_status, apis)
     embeds[0].set_footer(text=f"Time taken: {round(time.time() - start_time, 2)}s")
 
-    async def fetch_image(image: Base64Image | str) -> io.BytesIO:
-        if isinstance(image, Base64Image):
-            return image.to_bytesio()
-        async with apis.session.get(image) as response:
-            return io.BytesIO(await response.read())
-
     await message.edit(
         embeds=embeds,
         attachments=[
             discord.File(
-                fp=await fetch_image(generation.img),
+                fp=await fetch_image(generation.img, apis.session),
                 filename=f"{generation.id}.webp",
             )
             for generation in generation_status.generations

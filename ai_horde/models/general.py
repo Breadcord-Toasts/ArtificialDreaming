@@ -10,8 +10,8 @@ class HordeModel(BaseModel):
     def model_dump(self, *args, by_alias: bool = True, **kwargs) -> dict[str, Any]:
         return super().model_dump(*args, by_alias=by_alias, **kwargs)
 
-    def model_dump_json(self, *args, by_alias: bool = True, **kwargs) -> str:
-        return super().model_dump_json(*args, by_alias=by_alias, **kwargs)
+    def model_dump_json(self, *args, by_alias: bool = True, exclude_none: bool = True, **kwargs) -> str:
+        return super().model_dump_json(*args, by_alias=by_alias, exclude_none=exclude_none, **kwargs)
 
 
 class HordeRequest(HordeModel):

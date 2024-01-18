@@ -4,7 +4,7 @@ from typing import Any, Literal
 from pydantic import Field, model_validator
 
 from .general import HordeModel, RenamedField
-from .image import LoRA, Sampler, TextualInversion
+from .image import LoRA, Sampler, TextualInversion, ImageGenerationRequest, ImageGenerationParams
 
 
 # region Styles
@@ -47,6 +47,20 @@ class Style(HordeModel):
 
         return data
 
+    @property
+    def prompt(self) -> str | None:
+        prompt = self.positive_prompt
+        if prompt is not None and self.negative_prompt is not None:
+            prompt += f"###{self.negative_prompt}"
+        return prompt
+
+    @prompt.setter
+    def prompt(self, value: str) -> None:
+        values = value.split("###", 1)
+        self.positive_prompt = values[0]
+        if len(values) > 1:
+            self.negative_prompt = values[1]
+
     model: str | None = Field(
         default=None,
         description="The model to use for the image generation.",
@@ -74,9 +88,10 @@ class Style(HordeModel):
         ),
         ge=0.0, le=100.0,
     )
-    sampler_name: Sampler | None = Field(
+    sampler: Sampler | None = RenamedField(
         default=None,
         description="The sampler to use when generating this request.",
+        renamed_to="sampler", original_name="sampler_name",
     )
     loras: list[LoRA] | None = Field(
         default=None,
@@ -101,8 +116,55 @@ class Style(HordeModel):
         renamed_to="textual_inversions", original_name="tis",
     )
 
+    def to_generation_request(self, base_request: ImageGenerationRequest) -> ImageGenerationRequest:
+        style = self.model_dump(by_alias=False)
+        # print(style)
+        style.pop("name")
 
-StyleCategory = dict[str, list[str]]
+        positive_prompt = style.pop("positive_prompt").replace("{positive_prompt}", base_request.positive_prompt)
+        negative_prompt: str | None = style.pop("negative_prompt", None)
+        if negative_prompt is None:
+            negative_prompt = base_request.negative_prompt
+        elif base_request.negative_prompt is not None:
+            negative_prompt = negative_prompt.replace("{negative_prompt}", base_request.negative_prompt)
+
+        dummy_params = dict(
+            loras=(
+                [LoRA.model_validate(lora, strict=True) for lora in style.pop("loras") or []]
+                + ((base_request.params or ImageGenerationParams()).loras or [])
+            ) or None,
+            textual_inversions=(
+                [TextualInversion.model_validate(ti, strict=True) for ti in style.pop("textual_inversions") or []]
+                + ((base_request.params or ImageGenerationParams()).textual_inversions or [])
+            ) or None,
+        )
+        dummy_request = base_request.model_copy(
+            deep=True,
+            update=dict(
+                positive_prompt=positive_prompt,
+                negative_prompt=negative_prompt,
+                models=[style.pop("model")] if style.get("model") else base_request.models,
+                params=base_request.params.model_copy(
+                    deep=True,
+                    update=dummy_params,
+                ) if base_request.params else ImageGenerationParams(**dummy_params)
+            ),
+        )
+
+        request_fields = set(ImageGenerationRequest.model_fields.keys())
+        params_fields = set(ImageGenerationParams.model_fields.keys())
+        for field, value in style.items():
+            if value is None:
+                continue
+
+            if field in request_fields:
+                setattr(dummy_request, field, value)
+            elif field in params_fields:
+                setattr(dummy_request.params, field, value)
+            else:
+                print("Unknown field:", field, value)
+
+        return ImageGenerationRequest.model_validate(dummy_request, strict=True)
 # endregion
 
 

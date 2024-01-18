@@ -60,15 +60,21 @@ class HordeAPI:
     ) -> AsyncGenerator[list[FinishedGeneration], None]:
         """Simple helper function to both queue an image generation and wait for it to finish."""
         generation = await self.queue_image_generation(generation_settings)
-
         # There is just about 0 chance that the generation will already be done
         await asyncio.sleep(5)
+        async for result in self.wait_for_image_generation(generation):
+            yield result
+
+    async def wait_for_image_generation(
+        self, queued_generation: ImageGenerationResponse, /,
+    ) -> AsyncGenerator[list[FinishedGeneration], None]:
+        """Yield a list of finished generations for each new image that is generated"""
         start_time = time.time()
         images_done = 0
         while True:
-            check = await self.get_generation_status(generation.id)
+            check = await self.get_generation_status(queued_generation.id)
             if check.finished > images_done:
-                status = await self.get_generation_status(generation.id, full=True)
+                status = await self.get_generation_status(queued_generation.id, full=True)
                 yield status.generations
             images_done = check.finished
             if check.done or time.time() - start_time > 60 * 10:
@@ -106,7 +112,7 @@ class HordeAPI:
             check = await self.get_interrogation_status(interrogation.id)
             if check.state == InterrogationStatusState.DONE:
                 return check
-            await asyncio.sleep(4 * len(interrogation_settings.forms))
+            await asyncio.sleep(min(20, 4 * len(interrogation_settings.forms)))
 
     async def queue_interrogation(self, interrogation_settings: InterrogationRequest, /) -> InterrogationResponse:
         queued_interrogation = InterrogationResponse.model_validate(await json_request(

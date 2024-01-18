@@ -1,3 +1,5 @@
+import random
+
 import aiohttp
 import discord
 from discord.ext import commands, tasks
@@ -21,6 +23,7 @@ from .ai_horde.models.image import (
     Sampler,
     TextualInversion, CaptionResult,
 )
+from .helpers import fetch_image
 
 
 # === Big to do list ===
@@ -65,6 +68,8 @@ class ArtificialDreaming(breadcord.module.ModuleCog):
         )
 
         self.update_cache.start()
+        # if self.bot.settings.debug.value:
+        #     # Run tests
 
     async def cog_unload(self) -> None:
         if self.generic_session is not None and not self.generic_session.closed:
@@ -79,50 +84,75 @@ class ArtificialDreaming(breadcord.module.ModuleCog):
         await self.cache.update()
 
     @commands.hybrid_command()
-    async def generate(self, ctx: commands.Context, *, prompt: str, negative_prompt: str | None = None) -> None:
-        response = await ctx.reply("Generating image... Please wait.")
-        async for finished_image_pair in self.horde.generate_image(ImageGenerationRequest(
-            positive_prompt=prompt,
-            negative_prompt=negative_prompt,
-            models=["AlbedoBase XL (SDXL)"],
-            params=ImageGenerationParams(
-                width=1024,
-                height=1024,
-                sampler="k_dpmpp_sde",
-                loras=[LoRA(identifier="247778", strength_model=1, is_version=True)],
-                steps=8,
-                cfg_scale=2,
-                image_count=4,
-            ),
-            replacement_filter=True,
-            r2=False,
-        )):
+    async def generate(
+            self,
+            ctx: commands.Context,
+            *,
+            prompt: str,
+            negative_prompt: str | None = None,
+            random_style: bool = False,
+    ) -> None:
+        style = random.choice(tuple(self.cache.styles.values()))
+
+        response = await ctx.reply(
+            "Generating image... Please wait. \n"
+            + (f"Style: {style.name}" if random_style else "")
+        )
+
+        if random_style:
+            request = ImageGenerationRequest(
+                positive_prompt=prompt,
+                negative_prompt=negative_prompt,
+                nsfw=True,
+                params=ImageGenerationParams(image_count=4),
+                replacement_filter=True,
+            ).apply_style(style)
+        else:
+            request = ImageGenerationRequest(
+                positive_prompt=prompt,
+                negative_prompt=negative_prompt,
+                nsfw=True,
+                models=["AlbedoBase XL (SDXL)", "Fustercluck"],
+                params=ImageGenerationParams(
+                    width=1024,
+                    height=1024,
+                    sampler=Sampler.K_DPMPP_SDE,
+                    loras=[LoRA(identifier="246747", strength_model=1, is_version=True)],
+                    steps=8,
+                    cfg_scale=2.0,
+                    image_count=4,
+                ),
+                replacement_filter=True,
+            )
+
+        async for finished_image_pair in self.horde.generate_image(request):
             await response.edit(
                 attachments=[
                     discord.File(
-                        finished_generation.img.to_bytesio(),
+                        fp=await fetch_image(finished_generation.img, self.generic_session),
                         filename="image.webp",
                     )
                     for finished_generation in finished_image_pair
                 ],
             )
-        await response.edit(content="Finished generation.")
+        await response.edit(
+            content=(
+                "Finished generation. \n"
+                + (f"Style: {style.name}" if random_style else "")
+            )
+        )
 
     @commands.hybrid_command()
     async def describe(self, ctx: commands.Context, image_url: str) -> None:
-        response = await ctx.reply("Interrogating... Please wait.")
+        response = await ctx.reply("Requesting interrogation... Please wait.")
 
         finished_interrogation = await self.horde.interrogate(InterrogationRequest(
             image_url=image_url,
-            forms=[
-                InterrogationRequestForm(name=InterrogationType.CAPTION),
-            ],
+            forms=[InterrogationRequestForm(name=InterrogationType.CAPTION)],
         ))
         result: CaptionResult = finished_interrogation.forms[0].result
 
-        await response.edit(
-            content=result.caption
-        )
+        await response.edit(content=result.caption)
 
     @commands.hybrid_command()
     async def advanced_generate(
