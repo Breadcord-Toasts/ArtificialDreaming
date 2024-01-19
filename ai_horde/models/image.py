@@ -3,16 +3,9 @@ from __future__ import annotations
 import io
 from base64 import b64decode, b64encode
 from enum import StrEnum
-from typing import Annotated, Any, Literal, TypeVar, TYPE_CHECKING
+from typing import TYPE_CHECKING, Annotated, Any, Literal, TypeVar
 
-from pydantic import (
-    BeforeValidator,
-    Field,
-    computed_field,
-    conlist,
-    field_validator,
-    model_validator
-)
+from pydantic import BeforeValidator, Field, computed_field, conlist, field_validator, model_validator
 from pydantic_core import CoreSchema, core_schema
 
 from .general import HordeModel, HordeRequest, HordeSuccess, RenamedField

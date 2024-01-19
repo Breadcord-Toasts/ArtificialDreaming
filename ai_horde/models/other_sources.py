@@ -4,7 +4,7 @@ from typing import Any, Literal
 from pydantic import Field, model_validator
 
 from .general import HordeModel, RenamedField
-from .image import LoRA, Sampler, TextualInversion, ImageGenerationRequest, ImageGenerationParams
+from .image import ImageGenerationParams, ImageGenerationRequest, LoRA, Sampler, TextualInversion
 
 
 # region Styles
@@ -128,27 +128,27 @@ class Style(HordeModel):
         elif base_request.negative_prompt is not None:
             negative_prompt = negative_prompt.replace("{negative_prompt}", base_request.negative_prompt)
 
-        dummy_params = dict(
-            loras=(
+        dummy_params = {
+            "loras": (
                 [LoRA.model_validate(lora, strict=True) for lora in style.pop("loras") or []]
                 + ((base_request.params or ImageGenerationParams()).loras or [])
             ) or None,
-            textual_inversions=(
+            "textual_inversions": (
                 [TextualInversion.model_validate(ti, strict=True) for ti in style.pop("textual_inversions") or []]
                 + ((base_request.params or ImageGenerationParams()).textual_inversions or [])
             ) or None,
-        )
+        }
         dummy_request = base_request.model_copy(
             deep=True,
-            update=dict(
-                positive_prompt=positive_prompt,
-                negative_prompt=negative_prompt,
-                models=[style.pop("model")] if style.get("model") else base_request.models,
-                params=base_request.params.model_copy(
+            update={
+                "positive_prompt": positive_prompt,
+                "negative_prompt": negative_prompt,
+                "models": [style.pop("model")] if style.get("model") else base_request.models,
+                "params": base_request.params.model_copy(
                     deep=True,
                     update=dummy_params,
-                ) if base_request.params else ImageGenerationParams(**dummy_params)
-            ),
+                ) if base_request.params else ImageGenerationParams(**dummy_params),
+            },
         )
 
         request_fields = set(ImageGenerationRequest.model_fields.keys())

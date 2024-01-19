@@ -5,36 +5,33 @@ import math
 import re
 import textwrap
 import time
-from logging import Logger
-from typing import Any, NamedTuple, TypedDict
+from typing import Any, TypedDict
 
-import aiohttp
 import discord
 from discord import Interaction
 from pydantic import ValidationError
 
-from .ai_horde.cache import Cache
-from .ai_horde.interface import CivitAIAPI, HordeAPI
 from .ai_horde.models.civitai import CivitAIModel, CivitAIModelVersion, ModelType
 from .ai_horde.models.horde_meta import ActiveModel
 from .ai_horde.models.image import (
     Base64Image,
+    ControlType,
     ImageGenerationParams,
     ImageGenerationRequest,
     ImageGenerationStatus,
     LoRA,
     Sampler,
     TextualInversion,
-    TIPlacement, ControlType,
+    TIPlacement,
 )
-from .helpers import fetch_image
+from .helpers import APIPackage, fetch_image
 
 
 def strip_codeblock(string: str, /) -> str:
     match = re.match(
         r"```(?:json)?(.+)```",
         string,
-        flags=re.DOTALL | re.IGNORECASE
+        flags=re.DOTALL | re.IGNORECASE,
     )
     if match is None:
         return string
@@ -47,14 +44,6 @@ def strip_codeblock(string: str, /) -> str:
     code = "\n".join(lines)
 
     return textwrap.dedent(code)
-
-
-class APIPackage(NamedTuple):
-    horde: HordeAPI
-    civitai: CivitAIAPI
-    cache: Cache
-    logger: Logger
-    session: aiohttp.ClientSession
 
 
 class CustomModelsModal(discord.ui.Modal, title="Custom model"):
@@ -507,7 +496,7 @@ class GenerationSettingsView(discord.ui.View):
 
     @discord.ui.button(label="Get JSON", style=discord.ButtonStyle.grey, row=4, emoji="\N{INBOX TRAY}")
     async def get_json(self, interaction: discord.Interaction, _):
-        json = self.generation_request.model_dump_json(indent=4, exclude_none=True)
+        json = self.generation_request.model_dump_json(indent=4)
         try:
             await interaction.response.send_message(
                 f"AI horde request data: ```json\n{json}\n```",
@@ -745,7 +734,7 @@ class ControlTypeSelect(discord.ui.Select):
             placeholder="Select a control type...",
             options=[
                 discord.SelectOption(label="None"),
-                *(discord.SelectOption(label=control_type) for control_type in ControlType)
+                *(discord.SelectOption(label=control_type) for control_type in ControlType),
             ],
         )
 
@@ -851,6 +840,7 @@ class SourceImageView(discord.ui.View):
                     return embed.thumbnail.proxy_url
                 if embed.image:
                     return embed.image.proxy_url
+            return None
 
         # There appears to be a race condition here somehow?
         await asyncio.sleep(0.5)
@@ -863,7 +853,7 @@ class SourceImageView(discord.ui.View):
                 ),
             )
             await asyncio.sleep(5)
-            await interaction.message.edit(**await get_source_image_params(self.generation_request, self.apis), )
+            await interaction.message.edit(**await get_source_image_params(self.generation_request, self.apis))
             return
 
         async with self.apis.session.get(image_url) as response:
@@ -1003,7 +993,7 @@ async def get_settings_embeds(generation_request: ImageGenerationRequest, apis: 
     append_truthy("Image count", generation_request.params.image_count or 1)
     append_truthy(
         "Control type",
-        generation_request.params.control_type.value if generation_request.params.control_type else None
+        generation_request.params.control_type.value if generation_request.params.control_type else None,
     )
     append_truthy("Denoising strength", generation_request.params.denoising_strength)
     append_truthy("Sampler", sampler.value if (sampler := generation_request.params.sampler) else None)
@@ -1015,7 +1005,7 @@ async def get_settings_embeds(generation_request: ImageGenerationRequest, apis: 
             colour=discord.Colour.blurple(),
         )
         .set_footer(text="Click the buttons below to modify the request.")
-        .set_thumbnail(url="attachment://source_image.webp")
+        .set_thumbnail(url="attachment://source_image.webp"),
     ]
 
     lora_ti_embeds = await get_lora_ti_embeds(
@@ -1274,3 +1264,4 @@ async def process_generation(
         ],
         view=AttachmentDeletionView(required_votes=2),
     )
+    return None

@@ -68,7 +68,7 @@ class HordeAPI:
     async def wait_for_image_generation(
         self, queued_generation: ImageGenerationResponse, /,
     ) -> AsyncGenerator[list[FinishedGeneration], None]:
-        """Yield a list of finished generations for each new image that is generated"""
+        """Yield a list of finished generations for each new image that is generated."""
         start_time = time.time()
         images_done = 0
         while True:
@@ -251,7 +251,11 @@ async def json_request(
     else:
         response = await session.request(method, url, json=data)
     if not response.ok:
-        message = (await response.json()).get("message")
+        json = await response.json()
+        message: str = json.get("message", "Unknown error")
+        if not message.endswith("."):
+            message += "."
+        message += " " + ", ".join(value for value in json.get("errors", {}).values())
         raise HordeRequestError(
             message=message,
             code=response.status,
