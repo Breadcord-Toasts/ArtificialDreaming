@@ -1226,7 +1226,7 @@ async def process_generation(
     await asyncio.sleep(5)
 
     while True:
-        generation_check = await apis.horde.get_generation_status(queued_generation.id)
+        generation_check = await apis.horde.get_image_generation_status(queued_generation.id)
         if generation_check.done:
             break
 
@@ -1248,7 +1248,7 @@ async def process_generation(
 
         await asyncio.sleep(5)
 
-    generation_status = await apis.horde.get_generation_status(queued_generation.id, full=True)
+    generation_status = await apis.horde.get_image_generation_status(queued_generation.id, full=True)
 
     embeds = await get_finished_embed(generation_request, generation_status, apis)
     embeds[0].set_footer(text=f"Time taken: {round(time.time() - start_time, 2)}s")

@@ -27,6 +27,7 @@ from .ai_horde.models.image import (
     Sampler,
     TextualInversion,
 )
+from .ai_horde.models.text import TextGenerationRequest
 from .helpers import APIPackage, fetch_image
 from .login import LoginButtonView
 

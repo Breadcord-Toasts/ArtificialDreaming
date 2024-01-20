@@ -9,6 +9,7 @@ from pydantic import BeforeValidator, Field, computed_field, conlist, field_vali
 from pydantic_core import CoreSchema, core_schema
 
 from .general import HordeModel, HordeRequest, HordeSuccess, RenamedField
+from .horde_meta import GenerationCheck
 
 if TYPE_CHECKING:
     from .other_sources import Style
@@ -249,7 +250,7 @@ class ImageGenerationParams(HordeModel):
     image_is_control: bool | None = Field(
         default=None,
         description=(
-            "If true if the source image is a pre-generated control map for ControlNet use, "
+            "If true, the source image is a pre-generated control map for ControlNet use, "
             "otherwise a control map will be generated."
         ),
     )
@@ -427,19 +428,6 @@ class ImageGenerationRequest(HordeRequest):
 
     def apply_style(self, style: Style) -> ImageGenerationRequest:
         return style.to_generation_request(self)
-
-
-class ImageGenerationResponse(HordeSuccess):
-    id: str = Field(
-        description="The UUID of the request. Use this to retrieve the request status in the future.",
-    )
-    kudos: int = Field(
-        description="The expected kudos consumption for this request.",
-    )
-    message: str | None = Field(
-        default=None,
-        description="Any extra information from the horde about this request.",
-    )
 # endregion
 
 
@@ -478,7 +466,7 @@ class GeneratedImageMetadata(HordeModel):
     )
 
 
-class FinishedGeneration(HordeModel):
+class FinishedImageGeneration(HordeModel):
     img: Base64Image | str = Field(
         description=(
             "The generated image. "
@@ -523,43 +511,8 @@ class FinishedGeneration(HordeModel):
     )
 
 
-class ImageGenerationCheck(HordeSuccess):
-    waiting: int = Field(
-        description="The amount of jobs waiting to be picked up by a worker.",
-    )
-    processing: int = Field(
-        description="The amount of still processing jobs in this request.",
-    )
-    finished: int = Field(
-        description="The amount of finished jobs in this request.",
-    )
-    restarted: int = Field(
-        description="The amount of jobs that timed out and had to be restarted or were reported as failed by a worker.",
-    )
-
-    is_possible: bool = Field(
-        description="If false, this request won't be able to be completed with the current pool of available workers.",
-    )
-    done: bool = Field(
-        description="True when all jobs in this request are done.",
-    )
-    faulted: bool = Field(
-        description="True when this request caused an internal server error and could not be completed.",
-    )
-
-    queue_position: int = Field(
-        description="The position in the requests queue. This position is determined by relative Kudos amounts.",
-    )
-    wait_time: int = Field(
-        description="The estimated time in seconds until all jobs in this request are done.",
-    )
-    kudos: float = Field(
-        description="The amount of total Kudos this request has consumed until now.",
-    )
-
-
-class ImageGenerationStatus(ImageGenerationCheck):
-    generations: list[FinishedGeneration] = Field(
+class ImageGenerationStatus(GenerationCheck):
+    generations: list[FinishedImageGeneration] = Field(
         description="A list of generated images.",
     )
     shared: bool = Field(

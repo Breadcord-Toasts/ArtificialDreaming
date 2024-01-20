@@ -12,18 +12,17 @@ from pydantic import BaseModel
 
 from .models.civitai import CivitAIModel, CivitAIModelVersion, ModelType
 from .models.general import HordeRequest, HordeRequestError
-from .models.horde_meta import ActiveModel, HordeNews, HordeUser, Team, Worker
+from .models.horde_meta import ActiveModel, HordeNews, HordeUser, Team, Worker, GenerationResponse, GenerationCheck
 from .models.image import (
-    FinishedGeneration,
-    ImageGenerationCheck,
+    FinishedImageGeneration,
     ImageGenerationRequest,
-    ImageGenerationResponse,
     ImageGenerationStatus,
     InterrogationRequest,
     InterrogationResponse,
     InterrogationStatus,
     InterrogationStatusState,
 )
+from .models.text import TextGenerationRequest, TextGenerationStatus, FinishedTextGeneration
 
 
 class URL(str):
@@ -57,7 +56,7 @@ class HordeAPI:
 
     async def generate_image(
         self, generation_settings: ImageGenerationRequest, /,
-    ) -> AsyncGenerator[list[FinishedGeneration], None]:
+    ) -> AsyncGenerator[list[FinishedImageGeneration], None]:
         """Simple helper function to both queue an image generation and wait for it to finish."""
         generation = await self.queue_image_generation(generation_settings)
         # There is just about 0 chance that the generation will already be done
@@ -66,15 +65,15 @@ class HordeAPI:
             yield result
 
     async def wait_for_image_generation(
-        self, queued_generation: ImageGenerationResponse, /,
-    ) -> AsyncGenerator[list[FinishedGeneration], None]:
+        self, queued_generation: GenerationResponse, /,
+    ) -> AsyncGenerator[list[FinishedImageGeneration], None]:
         """Yield a list of finished generations for each new image that is generated."""
         start_time = time.time()
         images_done = 0
         while True:
-            check = await self.get_generation_status(queued_generation.id)
+            check = await self.get_image_generation_status(queued_generation.id)
             if check.finished > images_done:
-                status = await self.get_generation_status(queued_generation.id, full=True)
+                status = await self.get_image_generation_status(queued_generation.id, full=True)
                 yield status.generations
             images_done = check.finished
             if check.done or time.time() - start_time > 60 * 10:
@@ -82,27 +81,70 @@ class HordeAPI:
                 return
             await asyncio.sleep(5)
 
-    async def queue_image_generation(self, generation_settings: ImageGenerationRequest, /) -> ImageGenerationResponse:
-        queued_generation = ImageGenerationResponse.model_validate(await json_request(
+    async def queue_image_generation(self, generation_settings: ImageGenerationRequest, /) -> GenerationResponse:
+        queued_generation = GenerationResponse.model_validate(await json_request(
             self.session, HTTPMethod.POST, HORDE_API_BASE / "v2/generate/async",
             data=generation_settings,
         ))
         self.logger.debug(f"Image generation queued: {queued_generation.id}")
         return queued_generation
 
-    async def get_generation_status(
+    async def get_image_generation_status(
         self, generation_id: str, *, full: bool = False,
-    ) -> ImageGenerationStatus | ImageGenerationCheck:
+    ) -> ImageGenerationStatus | GenerationCheck:
         """Get the status of an image generation. A "full" request will contain generated images."""
         json = await json_request(
             self.session,
             HTTPMethod.GET,
             url=HORDE_API_BASE / "v2/generate/" / ("status" if full else "check") / generation_id,
         )
-        return ImageGenerationStatus.model_validate(json) if full else ImageGenerationCheck.model_validate(json)
+        return ImageGenerationStatus.model_validate(json) if full else GenerationCheck.model_validate(json)
 
     async def cancel_image_generation(self, generation_id: str) -> None:
         await json_request(self.session, HTTPMethod.DELETE, HORDE_API_BASE / "v2/generate/status" / generation_id)
+
+    async def generate_text(
+        self, generation_settings: TextGenerationRequest, /,
+    ) -> AsyncGenerator[list[FinishedTextGeneration], None]:
+        """Simple helper function to both queue a text generation and wait for it to finish."""
+        generation = await self.queue_text_generation(generation_settings)
+        # There is just about 0 chance that the generation will already be done
+        await asyncio.sleep(5)
+        async for result in self.wait_for_text_generation(generation):
+            yield result
+
+    async def wait_for_text_generation(
+        self, queued_generation: GenerationResponse, /,
+    ) -> AsyncGenerator[list[FinishedTextGeneration], None]:
+        """Yield a list of finished generations for each new text that is generated."""
+        start_time = time.time()
+        texts_done = 0
+        while True:
+            check = await self.get_text_generation_status(queued_generation.id)
+            if check.finished > texts_done:
+                status = await self.get_text_generation_status(queued_generation.id)
+                yield status.generations
+            texts_done = check.finished
+            if check.done or time.time() - start_time > 60 * 10:
+                self.logger.debug(f"Text generation finished in {time.time() - start_time:.2f}s")
+                return
+            await asyncio.sleep(5)
+
+    async def queue_text_generation(self, generation_settings: TextGenerationRequest, /) -> GenerationResponse:
+        queued_generation = GenerationResponse.model_validate(await json_request(
+            self.session, HTTPMethod.POST, HORDE_API_BASE / "v2/generate/text/async",
+            data=generation_settings,
+        ))
+        self.logger.debug(f"Text generation queued: {queued_generation.id}")
+        return queued_generation
+
+    async def get_text_generation_status(self, generation_id: str) -> TextGenerationStatus:
+        return TextGenerationStatus.model_validate(await json_request(
+            self.session, HTTPMethod.GET, HORDE_API_BASE / "v2/generate/text/status" / generation_id,
+        ))
+
+    async def cancel_text_generation(self, generation_id: str) -> None:
+        await json_request(self.session, HTTPMethod.DELETE, HORDE_API_BASE / "v2/generate/text/status" / generation_id)
 
     async def interrogate(self, interrogation_settings: InterrogationRequest, /) -> InterrogationStatus:
         """Simple helper function to both queue an interrogation and wait for it to finish."""
@@ -246,7 +288,7 @@ async def json_request(
             method,
             url,
             # This is a bit of a hack, but not sure if there's a better way.
-            json=json_loads(data.model_dump_json(exclude_none=True, by_alias=True)),
+            json=json_loads(data.model_dump_json()),
         )
     else:
         response = await session.request(method, url, json=data)

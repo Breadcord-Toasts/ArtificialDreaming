@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import datetime
 from enum import Enum
 from typing import Any, Literal
@@ -458,3 +460,51 @@ class HordeUser(HordeSuccess):
         description="PRIVILEGED! A list of shared key IDs created by this user.",
     )
 # endregion
+
+
+class GenerationResponse(HordeSuccess):
+    id: str = Field(
+        description="The UUID of the request. Use this to retrieve the request status in the future.",
+    )
+    kudos: int = Field(
+        description="The expected kudos consumption for this request.",
+    )
+    message: str | None = Field(
+        default=None,
+        description="Any extra information from the horde about this request.",
+    )
+
+
+class GenerationCheck(HordeSuccess):
+    waiting: int = Field(
+        description="The amount of jobs waiting to be picked up by a worker.",
+    )
+    processing: int = Field(
+        description="The amount of still processing jobs in this request.",
+    )
+    finished: int = Field(
+        description="The amount of finished jobs in this request.",
+    )
+    restarted: int = Field(
+        description="The amount of jobs that timed out and had to be restarted or were reported as failed by a worker.",
+    )
+
+    is_possible: bool = Field(
+        description="If false, this request won't be able to be completed with the current pool of available workers.",
+    )
+    done: bool = Field(
+        description="True when all jobs in this request are done.",
+    )
+    faulted: bool = Field(
+        description="True when this request caused an internal server error and could not be completed.",
+    )
+
+    queue_position: int = Field(
+        description="The position in the requests queue. This position is determined by relative Kudos amounts.",
+    )
+    wait_time: int = Field(
+        description="The estimated time in seconds until all jobs in this request are done.",
+    )
+    kudos: float = Field(
+        description="The amount of total Kudos this request has consumed until now.",
+    )
