@@ -5,7 +5,8 @@ from base64 import b64decode, b64encode
 from enum import StrEnum
 from typing import TYPE_CHECKING, Annotated, Any, Literal, TypeVar
 
-from pydantic import BeforeValidator, Field, computed_field, conlist, field_validator, model_validator
+from pydantic import BeforeValidator, Field, computed_field, conlist, field_validator, model_validator, \
+    StringConstraints
 from pydantic_core import CoreSchema, core_schema
 
 from .general import HordeModel, HordeRequest, HordeSuccess, RenamedField
@@ -129,8 +130,9 @@ class LoRA(HordeModel):
         renamed_to="strength_clip", original_name="clip",
         ge=-5, le=5,
     )
-    inject_trigger: Literal["any"] | str | None = Field(
-        default=None,
+    # noinspection PyTypeHints
+    inject_trigger: Annotated[Literal["any"] | str, StringConstraints(min_length=1, max_length=30)] | None = Field(
+        default="any",
         description=(
             'If set, will try to discover a trigger for this LoRA which matches or is similar to this string '
             'and inject it into the prompt. '
