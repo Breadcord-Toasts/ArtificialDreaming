@@ -47,7 +47,7 @@ class Cache:
         self.storage_path = storage_path
         self.formatted_logs = formatted_cache
 
-        self.styles: dict[str, Style] = {}
+        self.styles: list[Style] = []
         self._styles_file = self.storage_path / "styles.json"
         self.style_categories: dict[str, list[str]] = {}
         self._style_categories_file = self.storage_path / "style_categories.json"
@@ -63,11 +63,15 @@ class Cache:
         self.logger.info("Updating cache...")
         await asyncio.gather(
             self.update_styles(),
-            self.update_style_categories(),
             self.update_horde_model_reference(),
             self.update_horde_models(),
             self.update_civitai_models(),
         )
+        # For things that depend on other things
+        await asyncio.gather(
+            self.update_style_categories(),
+        )
+
         self.logger.info("Cache updated.")
 
     async def update_styles(self) -> None:
@@ -82,10 +86,10 @@ class Cache:
         self.styles, errors = self._validate_dicts(raw_styles, Style)
 
         if not errors:
-            await self._open_and_dump(self._styles_file, {
-                style.name: json.loads(style.model_dump_json(by_alias=False))
+            await self._open_and_dump(self._styles_file, [
+                json.loads(style.model_dump_json(by_alias=False))
                 for style in self.styles
-            })
+            ])
         else:
             self.logger.warning(f"Failed to validate {len(errors)} styles, not saving to cache.")
 
@@ -97,6 +101,12 @@ class Cache:
 
         self.logger.info("Fetching style categories...")
         self.style_categories = await fetch_github_json_file(self.session, STYLE_CATEGORY_LIST)
+        for category, styles in self.style_categories.items():
+            for style in styles:
+                if style not in self.styles:
+                    self.logger.error(f"Style {style} not found in styles list, removing from category {category}")
+                    styles.remove(style)
+
         await self._open_and_dump(self._style_categories_file, self.style_categories)
 
     async def update_horde_model_reference(self) -> None:

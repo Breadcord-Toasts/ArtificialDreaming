@@ -54,6 +54,22 @@ class HordeAPI:
         self.session = session
         self.logger = logger
 
+    async def get_results(
+        self, request: ImageGenerationRequest | TextGenerationRequest, /
+    ) -> list[FinishedImageGeneration] | list[FinishedTextGeneration]:
+        if isinstance(request, ImageGenerationRequest):
+            generator = self.generate_image
+        elif isinstance(request, TextGenerationRequest):
+            generator = self.generate_text
+        else:
+            raise ValueError("Invalid request type")
+
+        *_, generation = [
+            generation
+            async for generation in generator(request)
+        ]
+        return generation
+
     async def generate_image(
         self, generation_settings: ImageGenerationRequest, /,
     ) -> AsyncGenerator[list[FinishedImageGeneration], None]:

@@ -118,7 +118,7 @@ class ArtificialDreaming(breadcord.module.ModuleCog):
             if not api.session.closed:
                 await api.session.close()
 
-    @tasks.loop(minutes=10)
+    @tasks.loop(minutes=30)
     async def update_cache(self) -> None:
         await self.cache.update()
 
@@ -203,7 +203,7 @@ class ArtificialDreaming(breadcord.module.ModuleCog):
         negative_prompt: str | None = None,
         random_style: bool = False,
     ) -> None:
-        style = random.choice(tuple(self.cache.styles.values()))
+        style = random.choice(tuple(self.cache.styles))
 
         response = await ctx.reply(
             "Generating image... Please wait. \n"
