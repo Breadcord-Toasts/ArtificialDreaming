@@ -5,8 +5,15 @@ from base64 import b64decode, b64encode
 from enum import StrEnum
 from typing import TYPE_CHECKING, Annotated, Any, Literal, TypeVar
 
-from pydantic import BeforeValidator, Field, computed_field, conlist, field_validator, model_validator, \
-    StringConstraints
+from pydantic import (
+    BeforeValidator,
+    Field,
+    StringConstraints,
+    computed_field,
+    conlist,
+    field_validator,
+    model_validator,
+)
 from pydantic_core import CoreSchema, core_schema
 
 from .general import HordeModel, HordeRequest, HordeSuccess, RenamedField
@@ -14,6 +21,7 @@ from .horde_meta import GenerationCheck
 
 if TYPE_CHECKING:
     from .other_sources import Style
+    from ..cache import Cache
 
 _T = TypeVar("_T")
 
@@ -428,8 +436,8 @@ class ImageGenerationRequest(HordeRequest):
         ),
     )
 
-    def apply_style(self, style: Style) -> ImageGenerationRequest:
-        return style.to_generation_request(self)
+    def apply_style(self, style: Style, cache: Cache) -> ImageGenerationRequest:
+        return style.to_generation_request(self, cache=cache)
 # endregion
 
 

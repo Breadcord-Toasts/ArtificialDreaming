@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 from .models.civitai import CivitAIModel, CivitAIModelVersion, ModelType
 from .models.general import HordeRequest, HordeRequestError
-from .models.horde_meta import ActiveModel, HordeNews, HordeUser, Team, Worker, GenerationResponse, GenerationCheck
+from .models.horde_meta import ActiveModel, GenerationCheck, GenerationResponse, HordeNews, HordeUser, Team, Worker
 from .models.image import (
     FinishedImageGeneration,
     ImageGenerationRequest,
@@ -22,7 +22,7 @@ from .models.image import (
     InterrogationStatus,
     InterrogationStatusState,
 )
-from .models.text import TextGenerationRequest, TextGenerationStatus, FinishedTextGeneration
+from .models.text import FinishedTextGeneration, TextGenerationRequest, TextGenerationStatus
 
 
 class URL(str):
@@ -55,7 +55,7 @@ class HordeAPI:
         self.logger = logger
 
     async def get_results(
-        self, request: ImageGenerationRequest | TextGenerationRequest, /
+        self, request: ImageGenerationRequest | TextGenerationRequest, /,
     ) -> list[FinishedImageGeneration] | list[FinishedTextGeneration]:
         if isinstance(request, ImageGenerationRequest):
             generator = self.generate_image

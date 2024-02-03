@@ -1,9 +1,10 @@
 import asyncio
 import json
 import time
+from collections.abc import Mapping
 from logging import Logger
 from pathlib import Path
-from typing import Iterable, TypeVar
+from typing import Any, Iterable, TypeVar
 
 import aiofiles
 import aiohttp
@@ -12,7 +13,7 @@ from pydantic import BaseModel, ValidationError
 from .interface import URL, CivitAIAPI, HordeAPI, JsonLike
 from .models.civitai import CivitAIModel
 from .models.horde_meta import ActiveModel
-from .models.other_sources import ModelReference, Style
+from .models.other_sources import ModelReference, Style, StyleEnhancement
 
 __all__ = (
     "Cache",
@@ -20,6 +21,7 @@ __all__ = (
 
 
 STYLES_LIST = URL("https://api.github.com/repos/Haidra-Org/AI-Horde-Styles/contents/styles.json")
+ENHANCEMENTS_LIST = URL("https://api.github.com/repos/Haidra-Org/AI-Horde-Styles/contents/enhancements.json")
 STYLE_CATEGORY_LIST = URL("https://api.github.com/repos/Haidra-Org/AI-Horde-Styles/contents/categories.json")
 IMAGE_MODEL_REFERENCE_LIST = URL(
     "https://api.github.com/repos/Haidra-Org/AI-Horde-image-model-reference/contents/stable_diffusion.json",
@@ -47,22 +49,25 @@ class Cache:
         self.storage_path = storage_path
         self.formatted_logs = formatted_cache
 
-        self.styles: list[Style] = []
+        self.styles: list[Style] | None = None
         self._styles_file = self.storage_path / "styles.json"
-        self.style_categories: dict[str, list[str]] = {}
+        self.enhancements: dict[str, StyleEnhancement] | None = None
+        self._enhancements_file = self.storage_path / "enhancements.json"
+        self.style_categories: dict[str, list[str]] | None = None
         self._style_categories_file = self.storage_path / "style_categories.json"
         # TODO: Make this cover both image and text models, currently it's just image models
-        self.horde_model_reference: list[ModelReference] = []
+        self.horde_model_reference: dict[str, ModelReference] | None = None
         self._horde_model_reference_file = self.storage_path / "model_reference.json"
-        self.horde_models: list[ActiveModel] = []
+        self.horde_models: list[ActiveModel] | None = None
         self._horde_models_file = self.storage_path / "horde_models.json"
-        self.civitai_models: list[CivitAIModel] = []
+        self.civitai_models: list[CivitAIModel] | None = None
         self._civitai_models_file = self.storage_path / "civitai_models.json"
 
     async def update(self) -> None:
         self.logger.info("Updating cache...")
         await asyncio.gather(
             self.update_styles(),
+            self.update_enhancements(),
             self.update_horde_model_reference(),
             self.update_horde_models(),
             self.update_civitai_models(),
@@ -93,6 +98,24 @@ class Cache:
         else:
             self.logger.warning(f"Failed to validate {len(errors)} styles, not saving to cache.")
 
+    async def update_enhancements(self) -> None:
+        if not file_outdated(self._enhancements_file):
+            if not self.enhancements:
+                self.enhancements = await self.load_cache(self._enhancements_file, model=StyleEnhancement)
+            return
+
+        self.logger.info("Fetching enhancements...")
+        raw_enhancements: dict[str, dict[str, Any]] = await fetch_github_json_file(self.session, ENHANCEMENTS_LIST)
+        self.enhancements, errors = self._validate_dict_dicts(raw_enhancements, StyleEnhancement)
+
+        if not errors:
+            await self._open_and_dump(self._enhancements_file, {
+                key: json.loads(enhancement.model_dump_json(by_alias=False))
+                for key, enhancement in self.enhancements.items()
+            })
+        else:
+            self.logger.warning(f"Failed to validate {len(errors)} enhancements, not saving to cache.")
+
     async def update_style_categories(self) -> None:
         if not file_outdated(self._style_categories_file):
             if not self.style_categories:
@@ -112,6 +135,8 @@ class Cache:
 
         if len(self.style_categories) == len(original_categories):
             await self._open_and_dump(self._style_categories_file, self.style_categories)
+        else:
+            self.logger.warning("Failed to validate some style categories, not saving to cache.")
 
     async def update_horde_model_reference(self) -> None:
         if not file_outdated(self._horde_model_reference_file):
@@ -124,14 +149,13 @@ class Cache:
 
         self.logger.info("Fetching horde model reference...")
         raw_reference = await fetch_github_json_file(self.session, IMAGE_MODEL_REFERENCE_LIST)
-        raw_reference = raw_reference.values()  # Dict not a list, but keys are redundant
-        self.horde_model_reference, errors = self._validate_dicts(raw_reference, ModelReference)
+        self.horde_model_reference, errors = self._validate_dict_dicts(raw_reference, ModelReference)
 
         if not errors:
-            await self._open_and_dump(self._horde_model_reference_file, [
-                json.loads(model.model_dump_json(by_alias=False))
-                for model in self.horde_model_reference
-            ])
+            await self._open_and_dump(self._horde_model_reference_file, {
+                key: json.loads(reference.model_dump_json(by_alias=False))
+                for key, reference in self.horde_model_reference.items()
+            })
         else:
             self.logger.warning(f"Failed to validate {len(errors)} models, not saving to cache.")
 
@@ -188,9 +212,11 @@ class Cache:
             return data
 
     async def _open_and_dump(self, path: Path, data: JsonLike) -> None:
+        # Done first so the file isn't created if the dump fails
+        dumped = json.dumps(data, indent=4*self.formatted_logs)
         path.parent.mkdir(parents=True, exist_ok=True)
         async with aiofiles.open(path, "w", encoding="utf-8") as file:
-            await file.write(json.dumps(data, indent=4*self.formatted_logs))
+            await file.write(dumped)
 
     def _validate_dicts(
         self,
@@ -204,6 +230,23 @@ class Cache:
         for item in data:
             try:
                 validated.append(model.model_validate(item, strict=strict))
+            except ValidationError as error:
+                self.logger.exception(f"Failed to validate {model.__name__} {item}")
+                errors.append(error)
+        return validated, errors
+
+    def _validate_dict_dicts(
+        self,
+        data: Mapping[str, JsonLike],
+        model: type[AnyModel],
+        *,
+        strict: bool = False,
+    ) -> tuple[dict[str, AnyModel], list[Exception]]:
+        validated = {}
+        errors = []
+        for key, item in data.items():
+            try:
+                validated[key] = model.model_validate(item, strict=strict)
             except ValidationError as error:
                 self.logger.exception(f"Failed to validate {model.__name__} {item}")
                 errors.append(error)

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-import datetime
 from enum import Enum
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import Field, field_validator
 
 from .general import HordeModel, HordeSuccess
+
+if TYPE_CHECKING:
+    import datetime
 
 
 class TinyActiveModel(HordeModel):

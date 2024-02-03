@@ -2,7 +2,7 @@ from typing import Literal
 
 from pydantic import Field, conlist
 
-from .general import HordeRequest, HordeModel, RenamedField
+from .general import HordeModel, HordeRequest, RenamedField
 from .horde_meta import GenerationCheck
 
 
@@ -141,7 +141,7 @@ class TextGenerationRequest(HordeRequest):
         description=(
             "Which softpompt needs to be used to service this request "
             "For further information, see https://github.com/KoboldAI/KoboldAI-Client/wiki/Soft-Prompts"
-        )
+        ),
     )
     models: list[str] | None = Field(
         default=None,
