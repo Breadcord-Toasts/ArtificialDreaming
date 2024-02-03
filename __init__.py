@@ -38,7 +38,12 @@ from .login import LoginButtonView
 #  Make sure to cache it.
 
 
-class ArtificialDreaming(breadcord.module.ModuleCog):
+class ArtificialDreaming(
+    breadcord.module.ModuleCog,
+    commands.GroupCog,
+    group_name="horde",
+    group_description="Run commands for the AI Horde.",
+):
     def __init__(self, module_id: str) -> None:
         super().__init__(module_id)
         # All set in cog_load
