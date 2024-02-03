@@ -100,14 +100,18 @@ class Cache:
             return
 
         self.logger.info("Fetching style categories...")
-        self.style_categories = await fetch_github_json_file(self.session, STYLE_CATEGORY_LIST)
-        for category, styles in self.style_categories.items():
-            for style in styles:
-                if style not in self.styles:
-                    self.logger.error(f"Style {style} not found in styles list, removing from category {category}")
-                    styles.remove(style)
+        self.style_categories: dict[str, list[str]] = await fetch_github_json_file(self.session, STYLE_CATEGORY_LIST)
+        original_categories = self.style_categories.copy()
+        valid_references = [*(style.name for style in self.styles), *original_categories.keys()]
+        for category, references in self.style_categories.items():
+            for reference in references:
+                if reference not in valid_references:
+                    self.logger.error(f"Style {reference} not found in styles list, removing from category {category}")
+                    references.remove(reference)
+            self.style_categories[category] = references
 
-        await self._open_and_dump(self._style_categories_file, self.style_categories)
+        if len(self.style_categories) == len(original_categories):
+            await self._open_and_dump(self._style_categories_file, self.style_categories)
 
     async def update_horde_model_reference(self) -> None:
         if not file_outdated(self._horde_model_reference_file):
