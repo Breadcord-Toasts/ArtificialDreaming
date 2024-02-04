@@ -222,7 +222,7 @@ class ArtificialDreaming(
                 nsfw=True,
                 params=ImageGenerationParams(image_count=4),
                 replacement_filter=True,
-            ).apply_style(style)
+            ).apply_style(style, cache=self.cache)
         else:
             request = ImageGenerationRequest(
                 positive_prompt=prompt,
