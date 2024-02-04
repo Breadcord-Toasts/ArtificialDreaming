@@ -228,7 +228,7 @@ class ArtificialDreaming(
                 positive_prompt=prompt,
                 negative_prompt=negative_prompt,
                 nsfw=True,
-                models=["AlbedoBase XL (SDXL)", "Fustercluck"],
+                models=["AlbedoBase XL (SDXL)", "Fustercluck", "ICBINP XL"],
                 params=ImageGenerationParams(
                     width=1024,
                     height=1024,
