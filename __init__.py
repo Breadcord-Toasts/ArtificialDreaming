@@ -243,10 +243,11 @@ class ArtificialDreaming(
         negative_prompt: str | None = None,
         style: str | None = None,
     ) -> None:
-        if style.lower().strip() in ("random", "random style"):
-            style: Style = random.choice(self.cache.styles)
-        elif style is not None:
-            style: Style | None = next(filter(lambda s: s.name == style, self.cache.styles), None)
+        if style is not None:
+            if style.lower().strip() in ("random", "random style"):
+                style: Style = random.choice(self.cache.styles)
+            else:
+                style: Style | None = next(filter(lambda s: s.name == style, self.cache.styles), None)
             if style is None:
                 raise commands.BadArgument("Invalid style.")
 
