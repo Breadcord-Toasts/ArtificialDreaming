@@ -261,7 +261,7 @@ class ArtificialDreaming(
                 positive_prompt=prompt,
                 negative_prompt=negative_prompt,
                 nsfw=True,
-                params=ImageGenerationParams(image_count=4),
+                params=ImageGenerationParams(image_count=1),
                 replacement_filter=True,
             ).apply_style(style, cache=self.cache)
         else:
@@ -277,7 +277,7 @@ class ArtificialDreaming(
                     loras=[LoRA(identifier="246747", strength_model=1, is_version=True)],
                     steps=8,
                     cfg_scale=2.0,
-                    image_count=4,
+                    image_count=1,
                 ),
                 replacement_filter=True,
             )
