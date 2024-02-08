@@ -3,6 +3,7 @@ import sqlite3
 
 import aiohttp
 import discord
+from discord import app_commands
 from discord.ext import commands, tasks
 # noinspection PyProtectedMember
 from discord.user import _UserTag as UserTag
@@ -27,6 +28,7 @@ from .ai_horde.models.image import (
     Sampler,
     TextualInversion,
 )
+from .ai_horde.models.other_sources import Style
 from .ai_horde.models.text import TextGenerationRequest
 from .helpers import APIPackage, fetch_image
 from .login import LoginButtonView
@@ -127,6 +129,36 @@ class ArtificialDreaming(
     async def update_cache(self) -> None:
         await self.cache.update()
 
+    async def style_autocomplete(self, _, value: str) -> list[app_commands.Choice[str]]:
+        if not value:
+            return [
+                app_commands.Choice(
+                    name="Random style",
+                    value="random"
+                ),
+                *(
+                    app_commands.Choice(
+                        name=style.name,
+                        value=style.name,
+                    )
+                    for style in random.sample(self.cache.styles, 24)
+                )
+            ]
+
+        # noinspection PyArgumentEqualDefault
+        return [
+            app_commands.Choice(
+                name=style.name,
+                value=style.name,
+            )
+            for style in breadcord.helpers.search_for(
+                query=value,
+                objects=list(self.cache.styles),
+                key=lambda style: style.name,
+                max_results=25,
+            )
+        ]
+
     def horde_for(self, user: discord.User | discord.Member | int | UserTag) -> HordeAPI:
         if isinstance(user, UserTag):
             user = user.id
@@ -200,22 +232,30 @@ class ArtificialDreaming(
         await ctx.reply("Successfully logged out.")
 
     @commands.hybrid_command()
+    @app_commands.autocomplete(
+        style=style_autocomplete,
+    )
     async def generate(
         self,
         ctx: commands.Context,
         *,
         prompt: str,
         negative_prompt: str | None = None,
-        random_style: bool = False,
+        style: str | None = None,
     ) -> None:
-        style = random.choice(tuple(self.cache.styles))
+        if style.lower().strip() in ("random", "random style"):
+            style: Style = random.choice(self.cache.styles)
+        elif style is not None:
+            style: Style | None = next(filter(lambda s: s.name == style, self.cache.styles), None)
+            if style is None:
+                raise commands.BadArgument("Invalid style.")
 
         response = await ctx.reply(
             "Generating image... Please wait. \n"
-            + (f"Style: {style.name}" if random_style else ""),
+            + (f"Style: `{style.name}`" if style else ""),
         )
 
-        if random_style:
+        if style is not None:
             request = ImageGenerationRequest(
                 positive_prompt=prompt,
                 negative_prompt=negative_prompt,
@@ -254,7 +294,7 @@ class ArtificialDreaming(
         await response.edit(
             content=(
                 "Finished generation. \n"
-                + (f"Style: {style.name}" if random_style else "")
+                + (f"Style: {style.name}" if style else "")
             ),
         )
 
