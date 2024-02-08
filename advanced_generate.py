@@ -499,7 +499,7 @@ class GenerationSettingsView(discord.ui.View):
         json = self.generation_request.model_dump_json(indent=4)
         try:
             await interaction.response.send_message(
-                f"AI horde request data: ```json\n{json}\n```",
+                f"```json\n{json}\n```",
                 ephemeral=True,
             )
         except discord.HTTPException:
@@ -1264,4 +1264,3 @@ async def process_generation(
         ],
         view=AttachmentDeletionView(required_votes=2),
     )
-    return None
