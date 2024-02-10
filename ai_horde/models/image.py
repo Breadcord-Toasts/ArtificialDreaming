@@ -38,12 +38,15 @@ class Base64Image:
     """A Base64-encoded image."""
 
     def __init__(self, data: str | bytes) -> None:
-        if isinstance(data, bytes):
-            data = b64encode(data).decode()
-        self.data: str = data
+        if isinstance(data, str):
+            data = b64decode(data).decode()
+        self.data: bytes = data
 
     def __bytes__(self) -> bytes:
-        return b64decode(self.data)
+        return self.data
+
+    def __str__(self) -> str:
+        return b64encode(self.data).decode()
 
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__}>"
@@ -58,7 +61,7 @@ class Base64Image:
             cls,
             core_schema.str_schema(),
             serialization=core_schema.plain_serializer_function_ser_schema(
-                lambda x: x.data,
+                lambda x: str(x),
                 info_arg=False,
                 return_schema=core_schema.str_schema(),
             ),
