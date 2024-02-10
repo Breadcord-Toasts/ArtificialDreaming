@@ -130,34 +130,40 @@ class ArtificialDreaming(
         await self.cache.update()
 
     async def style_autocomplete(self, _, value: str) -> list[app_commands.Choice[str]]:
+        styles = [style.name for style in self.cache.styles] + list(self.cache.style_categories.keys())
+
         if not value:
             return [
-                app_commands.Choice(
-                    name="Random style",
-                    value="random"
-                ),
-                *(
-                    app_commands.Choice(
-                        name=style.name,
-                        value=style.name,
-                    )
-                    for style in random.sample(self.cache.styles, 24)
-                )
+                app_commands.Choice(name="Random style", value="random"),
+            ] + [
+                app_commands.Choice(name=style, value=style)
+                for style in random.sample(styles, 24)
             ]
 
         # noinspection PyArgumentEqualDefault
         return [
-            app_commands.Choice(
-                name=style.name,
-                value=style.name,
-            )
+            app_commands.Choice(name=style, value=style)
             for style in breadcord.helpers.search_for(
                 query=value,
-                objects=list(self.cache.styles),
-                key=lambda style: style.name,
+                objects=styles,
                 max_results=25,
             )
         ]
+
+    def style_from_name(self, name: str) -> Style | None:
+        def to_style(style_name: str) -> Style | None:
+            for style in self.cache.styles:
+                if style.name.lower() == style_name:
+                    return style
+
+        def from_category(category_name: str) -> Style | None:
+            category = self.cache.style_categories.get(category_name)
+            if category is not None:
+                style_name: str = random.choice(category)
+                return to_style(style_name)
+
+        name = name.lower().strip()
+        return to_style(name) or from_category(name)
 
     def horde_for(self, user: discord.User | discord.Member | int | UserTag) -> HordeAPI:
         if isinstance(user, UserTag):
@@ -243,27 +249,25 @@ class ArtificialDreaming(
         negative_prompt: str | None = None,
         style: str | None = None,
     ) -> None:
+        chosen_style: Style | None = None
         if style is not None:
-            if style.lower().strip() in ("random", "random style"):
-                style: Style = random.choice(self.cache.styles)
-            else:
-                style: Style | None = next(filter(lambda s: s.name == style, self.cache.styles), None)
-            if style is None:
+            chosen_style = self.style_from_name(style)
+            if chosen_style is None:
                 raise commands.BadArgument("Invalid style.")
 
         response = await ctx.reply(
             "Generating image... Please wait. \n"
-            + (f"Style: `{style.name}`" if style else ""),
+            + (f"Style: `{chosen_style.name}`" if chosen_style is not None else ""),
         )
 
-        if style is not None:
+        if chosen_style is not None:
             request = ImageGenerationRequest(
                 positive_prompt=prompt,
                 negative_prompt=negative_prompt,
                 nsfw=True,
                 params=ImageGenerationParams(image_count=1),
                 replacement_filter=True,
-            ).apply_style(style, cache=self.cache)
+            ).apply_style(chosen_style, cache=self.cache)
         else:
             request = ImageGenerationRequest(
                 positive_prompt=prompt,
@@ -295,7 +299,7 @@ class ArtificialDreaming(
         await response.edit(
             content=(
                 "Finished generation. \n"
-                + (f"Style: {style.name}" if style else "")
+                + (f"Style: {chosen_style.name}" if chosen_style is not None else "")
             ),
         )
 
