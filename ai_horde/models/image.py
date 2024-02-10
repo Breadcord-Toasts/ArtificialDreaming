@@ -20,8 +20,8 @@ from .general import HordeModel, HordeRequest, HordeSuccess, RenamedField
 from .horde_meta import GenerationCheck
 
 if TYPE_CHECKING:
-    from .other_sources import Style
     from ..cache import Cache
+    from .other_sources import Style
 
 _T = TypeVar("_T")
 
