@@ -1062,7 +1062,7 @@ async def get_finished_embed(
         "Textual inversions",
         ", ".join(ti.identifier for ti in generation_request.params.textual_inversions or []),
     )
-    description.append("\n")
+    description.append("")
     append_truthy("Finished by", ", ".join({
         generation.worker_id
         for generation in finished_generation.generations
@@ -1261,11 +1261,11 @@ async def process_generation(
         if generation_check.done:
             break
 
-        estimated_done_at = int(time.time() + max(generation_check.wait_time, time_between_checks))
+        estimated_done_at = int(time.time() + max(generation_check.wait_time, time_between_checks+1))
         embed.description = (
             f"{generic_wait_message}"
-            f"Generated {generation_check.finished}/{requested_images} images. \n"
-            f"Estimated to be done <t:{estimated_done_at}:R>."
+            + (f"Generated {generation_check.finished}/{requested_images} images. \n" if requested_images > 1 else "")
+            + f"Estimated to be done <t:{estimated_done_at}:R>."
         )
         await message.edit(embed=embed)
 
