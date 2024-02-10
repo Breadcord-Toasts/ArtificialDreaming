@@ -1202,6 +1202,36 @@ class AttachmentDeletionView(discord.ui.View):
         await interaction.message.edit(view=None, attachments=[])
 
 
+class DeleteOrRetryView(AttachmentDeletionView):
+    def __init__(self, generation_params: ImageGenerationRequest, apis: APIPackage, required_votes: int = 1,) -> None:
+        super().__init__(required_votes=required_votes)
+        self.generation_params = generation_params
+        self.apis = apis
+
+    @discord.ui.button(
+        label="Retry", style=discord.ButtonStyle.blurple,
+        emoji="\N{CLOCKWISE RIGHTWARDS AND LEFTWARDS OPEN CIRCLE ARROWS}"
+    )
+    async def retry(self, interaction: discord.Interaction, _):
+        await interaction.response.defer()
+        await process_generation(self.generation_params, apis=self.apis, reply_to=interaction.message)
+
+    @discord.ui.button(
+        label="Retry and edit", style=discord.ButtonStyle.blurple,
+        emoji="\N{CLOCKWISE RIGHTWARDS AND LEFTWARDS OPEN CIRCLE ARROWS}"
+    )
+    async def retry_and_edit(self, interaction: discord.Interaction, _):
+        await interaction.response.send_message(
+            "Choose generation settings",
+            view=GenerationSettingsView(
+                apis=self.apis,
+                default_request=self.generation_params,
+                author_id=interaction.user.id
+            ),
+            embeds=await get_settings_embeds(self.generation_params, self.apis),
+        )
+
+
 async def process_generation(
     generation_request: ImageGenerationRequest,
     *,
@@ -1225,15 +1255,17 @@ async def process_generation(
 
     await asyncio.sleep(5)
 
+    time_between_checks = 5
     while True:
         generation_check = await apis.horde.get_image_generation_status(queued_generation.id)
         if generation_check.done:
             break
 
+        estimated_done_at = int(time.time() + max(generation_check.wait_time, time_between_checks))
         embed.description = (
             f"{generic_wait_message}"
             f"Generated {generation_check.finished}/{requested_images} images. \n"
-            f"Estimated to be done <t:{int(time.time() + generation_check.wait_time)}:R>."
+            f"Estimated to be done <t:{estimated_done_at}:R>."
         )
         await message.edit(embed=embed)
 
@@ -1246,7 +1278,7 @@ async def process_generation(
             ))
             return message
 
-        await asyncio.sleep(5)
+        await asyncio.sleep(time_between_checks)
 
     generation_status = await apis.horde.get_image_generation_status(queued_generation.id, full=True)
 
@@ -1262,5 +1294,5 @@ async def process_generation(
             )
             for generation in generation_status.generations
         ],
-        view=AttachmentDeletionView(required_votes=2),
+        view=DeleteOrRetryView(required_votes=2, generation_params=generation_request, apis=apis),
     )
