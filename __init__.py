@@ -277,8 +277,8 @@ class ArtificialDreaming(
                 params=ImageGenerationParams(
                     width=1024,
                     height=1024,
-                    sampler=Sampler.K_DPMPP_SDE,
-                    loras=[LoRA(identifier="246747", strength_model=1, is_version=True)],
+                    sampler=Sampler.K_EULER_A,
+                    loras=[LoRA(identifier="246747", is_version=True)],
                     steps=8,
                     cfg_scale=2.0,
                     image_count=1,
