@@ -285,23 +285,26 @@ class ArtificialDreaming(
                 ),
                 replacement_filter=True,
             )
-
-        async for finished_image_pair in self.horde_for(ctx.author).generate_image(request):
+        try:
+            async for finished_image_pair in self.horde_for(ctx.author).generate_image(request):
+                await response.edit(
+                    attachments=[
+                        discord.File(
+                            fp=await fetch_image(finished_generation.img, self.generic_session),
+                            filename="image.webp",
+                        )
+                        for finished_generation in finished_image_pair
+                    ],
+                )
+        except HordeRequestError as error:
+            await response.edit(content=f"Error occurred while generating image: {error}")
+        else:
             await response.edit(
-                attachments=[
-                    discord.File(
-                        fp=await fetch_image(finished_generation.img, self.generic_session),
-                        filename="image.webp",
-                    )
-                    for finished_generation in finished_image_pair
-                ],
+                content=(
+                    "Finished generation. \n"
+                    + (f"Style: {chosen_style.name}" if chosen_style is not None else "")
+                ),
             )
-        await response.edit(
-            content=(
-                "Finished generation. \n"
-                + (f"Style: {chosen_style.name}" if chosen_style is not None else "")
-            ),
-        )
 
     @commands.hybrid_command()
     async def describe(self, ctx: commands.Context, image_url: str) -> None:
