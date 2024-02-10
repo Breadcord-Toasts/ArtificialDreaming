@@ -20,5 +20,5 @@ class LoginButtonView(discord.ui.View):
         modal = LoginModal()
         await interaction.response.send_modal(modal)
         await modal.wait()
-        self.api_key = modal.api_key_input.value
+        self.api_key = modal.api_key_input.value.strip()
         self.stop()
