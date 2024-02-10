@@ -310,13 +310,16 @@ class ArtificialDreaming(
     async def describe(self, ctx: commands.Context, image_url: str) -> None:
         response = await ctx.reply("Requesting interrogation... Please wait.")
 
-        finished_interrogation = await self.horde_for(ctx.author).interrogate(InterrogationRequest(
-            image_url=image_url,
-            forms=[InterrogationRequestForm(name=InterrogationType.CAPTION)],
-        ))
-        result: CaptionResult = finished_interrogation.forms[0].result
-
-        await response.edit(content=result.caption)
+        try:
+            finished_interrogation = await self.horde_for(ctx.author).interrogate(InterrogationRequest(
+                image_url=image_url,
+                forms=[InterrogationRequestForm(name=InterrogationType.CAPTION)],
+            ))
+            result: CaptionResult = finished_interrogation.forms[0].result
+        except HordeRequestError as error:
+            await response.edit(content=f"Error occurred while interrogating image: {error}")
+        else:
+            await response.edit(content=result.caption)
 
     @commands.hybrid_command()
     async def advanced_generate(
