@@ -559,6 +559,14 @@ class GenerationSettingsView(discord.ui.View):
         await defer_and_edit(interaction, self.generation_request, self.apis, responded_already=True)
 
 
+def model_id_from_url(url: str, /) -> str:
+    matches = re.match(r"https?://civitai.com/models/([0-9]+)(?:\?modelVersionId=([0-9]+))?", url)
+    if matches is None:
+        raise ValueError("Failed to parse CivitAI model URL.")
+    model_id, version_id = matches.groups()
+    return version_id or model_id
+
+
 class LoRAPickerModal(discord.ui.Modal, title="LoRA"):
     def __init__(
         self,
@@ -592,8 +600,12 @@ class LoRAPickerModal(discord.ui.Modal, title="LoRA"):
     )
 
     async def on_submit(self, interaction: Interaction, /) -> None:
+        model_id = self.identifier.value.strip()
+        if re.match(r"^https?://civitai.com/models/", model_id):
+            model_id = model_id_from_url(model_id)
+
         self.loras.append(LoRA(
-            identifier=self.identifier.value.strip(),
+            identifier=model_id,
             strength_model=float(self.model_strength.value) if self.model_strength.value else None,
             strength_clip=float(self.clip_strength.value) if self.clip_strength.value else None,
             is_version=check_truthy(self.is_version.value) if self.is_version.value else None,
@@ -640,9 +652,13 @@ class TextualInversionPickerModal(discord.ui.Modal, title="Textual Inversion"):
                 return TIPlacement.NEGATIVE_PROMPT
             return None
 
+        model_id = self.identifier.value.strip()
+        if re.match(r"^https?://civitai.com/models/", model_id):
+            model_id = model_id_from_url(model_id)
+
         self.textual_inversions = self.textual_inversions or []
         self.textual_inversions.append(TextualInversion(
-            identifier=self.identifier.value.strip(),
+            identifier=model_id,
             injection_location=transform_location(self.injection_location.value),
             strength=float(self.strength.value) if self.strength.value else None,
         ))
