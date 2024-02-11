@@ -309,7 +309,6 @@ class ArtificialDreaming(
     @commands.hybrid_command()
     async def describe(self, ctx: commands.Context, image_url: str) -> None:
         response = await ctx.reply("Requesting interrogation... Please wait.")
-
         try:
             finished_interrogation = await self.horde_for(ctx.author).interrogate(InterrogationRequest(
                 image_url=image_url,

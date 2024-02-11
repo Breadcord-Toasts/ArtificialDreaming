@@ -78,19 +78,19 @@ class SourceProcessing(StrEnum):
 # noinspection SpellCheckingInspection
 class Sampler(StrEnum):
     DDIM = "DDIM"
-    K_HEUN = "k_heun"
-    DPMSOLVER = "dpmsolver"
-    K_DPM_ADAPTIVE = "k_dpm_adaptive"
     K_EULER_A = "k_euler_a"
-    K_DPMPP_2S_A = "k_dpmpp_2s_a"
-    K_LMS = "k_lms"
-    K_EULER = "k_euler"
-    K_DPMPP_2M = "k_dpmpp_2m"
-    K_DPM_2_A = "k_dpm_2_a"
-    LCM = "lcm"
-    K_DPM_FAST = "k_dpm_fast"
+    K_DPM_ADAPTIVE = "k_dpm_adaptive"
+    K_HEUN = "k_heun"
     K_DPM_2 = "k_dpm_2"
     K_DPMPP_SDE = "k_dpmpp_sde"
+    K_LMS = "k_lms"
+    DPMSOLVER = "dpmsolver"
+    K_DPM_FAST = "k_dpm_fast"
+    K_EULER = "k_euler"
+    K_DPM_2_A = "k_dpm_2_a"
+    K_DPMPP_2S_A = "k_dpmpp_2s_a"
+    K_DPMPP_2M = "k_dpmpp_2m"
+    LCM = "lcm"
 
 
 # noinspection SpellCheckingInspection

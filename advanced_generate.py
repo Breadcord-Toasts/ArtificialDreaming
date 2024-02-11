@@ -427,11 +427,14 @@ class GenerationSettingsView(discord.ui.View):
             ),
         )
 
+    def _set_nsfw(self, value: bool) -> None:
+        self.generation_request.nsfw = value
+        self.nsfw_toggle.style = discord.ButtonStyle.red if value else discord.ButtonStyle.grey
+        self.nsfw_toggle.label = f"Allow NSFW: {'Yes' if value else 'No'}"
+
     @discord.ui.button(label="Allow NSFW: No", style=discord.ButtonStyle.grey, row=2)
-    async def nsfw_toggle(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.generation_request.nsfw = not self.generation_request.nsfw
-        button.style = discord.ButtonStyle.red if self.generation_request.nsfw else discord.ButtonStyle.grey
-        button.label = f"Allow NSFW: {'Yes' if self.generation_request.nsfw else 'No'}"
+    async def nsfw_toggle(self, interaction: discord.Interaction, _):
+        self._set_nsfw(not self.generation_request.nsfw)
         await defer_and_edit(interaction, self.generation_request, self.apis, view=self)
 
     @discord.ui.button(label="Source image", style=discord.ButtonStyle.blurple, row=3)
@@ -552,11 +555,13 @@ class GenerationSettingsView(discord.ui.View):
             )
             self.logger.exception("Failed to load JSON")
             return
+        # Update the button
+        self._set_nsfw(self.generation_request.nsfw)
 
         await request_message.delete()
         with contextlib.suppress(discord.HTTPException):
             await reply.delete()
-        await defer_and_edit(interaction, self.generation_request, self.apis, responded_already=True)
+        await defer_and_edit(interaction, self.generation_request, self.apis, view=self, responded_already=True)
 
 
 def model_id_from_url(url: str, /) -> str:
