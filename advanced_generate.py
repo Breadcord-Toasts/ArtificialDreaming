@@ -12,6 +12,7 @@ from discord import Interaction
 from pydantic import ValidationError
 
 from .ai_horde.models.civitai import CivitAIModel, CivitAIModelVersion, ModelType
+from .ai_horde.models.general import HordeRequestError
 from .ai_horde.models.horde_meta import ActiveModel
 from .ai_horde.models.image import (
     Base64Image,
@@ -1260,7 +1261,22 @@ async def process_generation(
     reply_to: discord.Message,
 ) -> discord.Message:
     start_time = time.time()
-    queued_generation = await apis.horde.queue_image_generation(generation_request)
+    try:
+        queued_generation = await apis.horde.queue_image_generation(generation_request)
+    except HordeRequestError as error:
+        if error.code != 403:
+            raise
+
+        is_anon = apis.horde.session.headers.get("apikey", "0000000000") == "0000000000"
+        return await reply_to.reply(
+            embed=discord.Embed(
+                title="You do not have the required kudos to queue this generation",
+                description=(
+                    f"{error}\n\n"
+                ) + f"**This might be solved by logging in to the horde using `/horde login`**" if is_anon else "",
+                colour=discord.Colour.red(),
+            ),
+        )
 
     requested_images = generation_request.params.image_count or 1
     generic_wait_message = (

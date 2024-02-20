@@ -181,7 +181,11 @@ class ArtificialDreaming(
         response = await ctx.reply(
             (
                 "Make sure you have an account and API key for the [AI Horde](https://aihorde.net/). "
-                "If you do not have an account, you can make one [here](https://aihorde.net/register). "
+                "If you do not have an account, you can make one [here](https://aihorde.net/register)."
+                "\n\n"
+                "### **Important!** \n"
+                "Your API key will be used to perform actions on your behalf. "
+                "If you do not trust the bot owner with these permissions, consider using a shared token."
             ),
             view=view,
             ephemeral=True,
@@ -343,12 +347,15 @@ class ArtificialDreaming(
             replacement_filter=True,
         )
         apis = APIPackage(self.horde_for(ctx.author), self.civitai, self.cache, self.logger, self.generic_session)
-        view = GenerationSettingsView(apis=apis, default_request=generation_request, author_id=ctx.author.id)
-        await ctx.reply(
-            "Choose generation settings",
-            view=view,
-            embeds=await get_settings_embeds(generation_request, apis),
-        )
+        try:
+            view = GenerationSettingsView(apis=apis, default_request=generation_request, author_id=ctx.author.id)
+            await ctx.reply(
+                "Choose generation settings",
+                view=view,
+                embeds=await get_settings_embeds(generation_request, apis),
+            )
+        except HordeRequestError as error:
+            await ctx.send(f"Encountered an error from the AI Horde: {error}")
 
 
 async def setup(bot: breadcord.Bot):
