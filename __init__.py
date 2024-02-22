@@ -1,5 +1,6 @@
 import random
 import sqlite3
+from typing import TYPE_CHECKING
 
 import aiohttp
 import discord
@@ -12,7 +13,7 @@ import breadcord
 from .advanced_generate import GenerationSettingsView, get_settings_embeds
 from .ai_horde.cache import Cache
 from .ai_horde.interface import CivitAIAPI, HordeAPI
-from .ai_horde.models.civitai import ModelType, CivitAIModel, CivitAIModelVersion
+from .ai_horde.models.civitai import ModelType
 from .ai_horde.models.general import HordeRequestError
 from .ai_horde.models.horde_meta import HordeNews
 from .ai_horde.models.image import (
@@ -33,9 +34,13 @@ from .ai_horde.models.text import TextGenerationRequest
 from .helpers import APIPackage, fetch_image
 from .login import LoginButtonView
 
+if TYPE_CHECKING:
+    from .ai_horde.models.civitai import CivitAIModel, CivitAIModelVersion
+
 
 class NoneWithProperties:
-    """Provides a nicer interface for acessing properties of objects that may not be defined"""
+    """Provides a nicer interface for accessing properties of objects that may not be defined."""
+
     def __bool__(self) -> bool:
         return False
 
@@ -370,7 +375,7 @@ class ArtificialDreaming(
             await ctx.send(f"Encountered an error from the AI Horde: {error}")
 
     @commands.hybrid_command(description="Get info about a model from CivitAI.")
-    @app_commands.describe(model_id="The ID as shown in the CivitAI URL.",)
+    @app_commands.describe(model_id="The ID as shown in the CivitAI URL.")
     async def civitai_model(self, ctx: commands.Context, model_id: int) -> None:
         # TODO: Integrate with horde model reference?
         model: CivitAIModel | None = None

@@ -1225,14 +1225,14 @@ class AttachmentDeletionView(discord.ui.View):
 
 
 class DeleteOrRetryView(AttachmentDeletionView):
-    def __init__(self, generation_params: ImageGenerationRequest, apis: APIPackage, required_votes: int = 1,) -> None:
+    def __init__(self, generation_params: ImageGenerationRequest, apis: APIPackage, required_votes: int = 1) -> None:
         super().__init__(required_votes=required_votes)
         self.generation_params = generation_params
         self.apis = apis
 
     @discord.ui.button(
         label="Retry", style=discord.ButtonStyle.blurple,
-        emoji="\N{CLOCKWISE RIGHTWARDS AND LEFTWARDS OPEN CIRCLE ARROWS}"
+        emoji="\N{CLOCKWISE RIGHTWARDS AND LEFTWARDS OPEN CIRCLE ARROWS}",
     )
     async def retry(self, interaction: discord.Interaction, _):
         await interaction.response.defer()
@@ -1240,7 +1240,7 @@ class DeleteOrRetryView(AttachmentDeletionView):
 
     @discord.ui.button(
         label="Retry and edit", style=discord.ButtonStyle.blurple,
-        emoji="\N{CLOCKWISE RIGHTWARDS AND LEFTWARDS OPEN CIRCLE ARROWS}"
+        emoji="\N{CLOCKWISE RIGHTWARDS AND LEFTWARDS OPEN CIRCLE ARROWS}",
     )
     async def retry_and_edit(self, interaction: discord.Interaction, _):
         await interaction.response.send_message(
@@ -1248,7 +1248,7 @@ class DeleteOrRetryView(AttachmentDeletionView):
             view=GenerationSettingsView(
                 apis=self.apis,
                 default_request=self.generation_params,
-                author_id=interaction.user.id
+                author_id=interaction.user.id,
             ),
             embeds=await get_settings_embeds(self.generation_params, self.apis),
         )
@@ -1273,7 +1273,7 @@ async def process_generation(
                 title="You do not have the required kudos to queue this generation",
                 description=(
                     f"{error}\n\n"
-                ) + f"**This might be solved by logging in to the horde using `/horde login`**" if is_anon else "",
+                ) + "**This might be solved by logging in to the horde using `/horde login`**" if is_anon else "",
                 colour=discord.Colour.red(),
             ),
         )
