@@ -12,7 +12,7 @@ import breadcord
 from .advanced_generate import GenerationSettingsView, get_settings_embeds
 from .ai_horde.cache import Cache
 from .ai_horde.interface import CivitAIAPI, HordeAPI
-from .ai_horde.models.civitai import ModelType
+from .ai_horde.models.civitai import ModelType, CivitAIModel, CivitAIModelVersion
 from .ai_horde.models.general import HordeRequestError
 from .ai_horde.models.horde_meta import HordeNews
 from .ai_horde.models.image import (
@@ -32,6 +32,18 @@ from .ai_horde.models.other_sources import Style
 from .ai_horde.models.text import TextGenerationRequest
 from .helpers import APIPackage, fetch_image
 from .login import LoginButtonView
+
+
+class NoneWithProperties:
+    """Provides a nicer interface for acessing properties of objects that may not be defined"""
+    def __bool__(self) -> bool:
+        return False
+
+    def __getattr__(self, item) -> "NoneWithProperties":
+        return self
+
+    def __getitem__(self, item) -> "NoneWithProperties":
+        return self
 
 
 # === Big to do list ===
@@ -356,6 +368,81 @@ class ArtificialDreaming(
             )
         except HordeRequestError as error:
             await ctx.send(f"Encountered an error from the AI Horde: {error}")
+
+    @commands.hybrid_command(description="Get info about a model from CivitAI.")
+    @app_commands.describe(model_id="The ID as shown in the CivitAI URL.",)
+    async def civitai_model(self, ctx: commands.Context, model_id: int) -> None:
+        # TODO: Integrate with horde model reference?
+        model: CivitAIModel | None = None
+        version: CivitAIModelVersion | NoneWithProperties = NoneWithProperties()
+        try:
+            model = await self.civitai.get_model(model_id)
+        except HordeRequestError:
+            version = await self.civitai.get_model_version(model_id)
+            if version is not None:
+                model = await self.civitai.get_model(version.model_id)
+        finally:
+            if model is None:
+                await ctx.reply("Model not found.", ephemeral=True)
+                return
+
+        def hacky_camel_case_split(string: str) -> str:
+            if len(string) < 8:  # VERY hacky, but oh well
+                return string
+            out = ""
+            for i in range(len(string)):
+                char = string[i]
+                out += char
+                next_char = string[nxt] if (nxt := i+1) < len(string) else ""
+                if char.islower() and next_char.isupper():
+                    out += " "
+            return out
+
+        embed = discord.Embed(
+            title=version.name or model.name,
+            url=version.url or model.url,
+            colour=discord.Colour.random(seed=model.id),
+            description="\n".join(s for s in (
+                f"Version of [{model.name}]({model.url})" if version else "",
+                f"**Model type:** {hacky_camel_case_split(model.type.value)}",
+                f"**NSFW:** {model.nsfw}" if model.nsfw else "",
+            ) if s),
+        )
+        embed.set_image(url=version.sfw_thumbnail_url or model.sfw_thumbnail_url)
+        embed.set_author(
+            name=model.creator.username,
+            icon_url=model.creator.image_url,
+        )
+        footer = f"Model ID: {model.id}"
+        if version:
+            footer += f" | Version ID: {version.id}"
+        embed.set_footer(text=footer)
+        embed.add_field(
+            name=((stats := model.stats) and False) or "Stats",
+            value="\n".join(s for s in (
+                f"**Downloads:** {stats.download_count:,}",
+                f"**Rating:** {stats.rating} ({stats.ratingCount:,} ratings)" if stats.rating is not None else "",
+            ) if s),
+            inline=False,
+        )
+        file = (version or model.versions[0]).files[0]
+        if file.size_kb > 1024 ** 2:
+            appropriate_filesize = f"{file.size_kb / (1024 * 1024):.2f} GB"
+        elif file.size_kb > 1024:
+            appropriate_filesize = f"{file.size_kb / 1024:.2f} MB"
+        else:
+            appropriate_filesize = f"{file.size_kb:.2f} KB"
+        embed.add_field(
+            name="File",
+            value="\n".join(s for s in (
+                f"[{file.name}]({file.download_url})",
+                f"**Size:** {appropriate_filesize}",
+                f"**Type:** {hacky_camel_case_split(file.type.value)}",
+            ) if s),
+            inline=False,
+        )
+
+        await ctx.reply(embed=embed)
 
 
 async def setup(bot: breadcord.Bot):

@@ -283,6 +283,11 @@ class CivitAIAPI:
         json = await json_request(self.session, HTTPMethod.GET, CIVITAI_API_DOMAIN / "v1/model-versions" / version_id)
         return CivitAIModelVersion.model_validate(json)
 
+    async def get_model_from_version(self, version: CivitAIModelVersion | int | str) -> CivitAIModel | None:
+        if not isinstance(version, CivitAIModelVersion):
+            version = await self.get_model_version(version)
+        return await self.get_model(version.model_id)
+
 
 async def json_request(
     session: aiohttp.ClientSession,
@@ -309,11 +314,15 @@ async def json_request(
     else:
         response = await session.request(method, url, json=data)
     if not response.ok:
-        json = await response.json()
-        message: str = json.get("message", "Unknown error")
-        if not message.endswith("."):
-            message += "."
-        message += " " + ", ".join(value for value in json.get("errors", {}).values())
+        json: JsonLike = await response.json()
+        message: str | None = None
+        if isinstance(json, dict):
+            message = json.get("message", response.reason)
+            if not message.endswith("."):
+                message += "."
+            message += " " + ", ".join(value for value in json.get("errors", {}).values())
+        elif isinstance(json, str):
+            message = json
         raise HordeRequestError(
             message=message,
             code=response.status,

@@ -125,7 +125,8 @@ class CivitAIImageMetadata(BaseModel):
 
 
 class CivitAIImage(HordeSuccess):
-    id: int = Field(
+    id: int | None = Field(
+        default=None,
         description="The image's identifier.",
     )
     url: str = Field(
@@ -187,6 +188,8 @@ class CivitAICreator(HordeSuccess):
 
 
 class CivitAIModelStats(HordeModel):
+    model_config = ConfigDict(protected_namespaces=(), extra="allow")
+
     download_count: int = RenamedField(
         description="The number of times the model has been downloaded.",
         renamed_to="download_count", original_name="downloadCount",
@@ -216,6 +219,8 @@ class CivitAIModelStats(HordeModel):
 
 
 class CivitAIModelFileMetadata(HordeModel):
+    model_config = ConfigDict(extra="allow")
+
     fp: str | None = Field(
         default=None,
         description="The model file's floating point precision, such as fp16 or fp32",
@@ -253,7 +258,7 @@ class CivitAIModelFileType(Enum):
 
 
 class CivitAIModelFile(HordeModel):
-    model_config = ConfigDict(protected_namespaces=())
+    model_config = ConfigDict(protected_namespaces=(), extra="allow")
 
     name: str = Field(
         description="The file's name.",
@@ -316,7 +321,7 @@ class BaseModelType(Enum):
 
 
 class CivitAIModelVersion(HordeModel):
-    model_config = ConfigDict(protected_namespaces=())
+    model_config = ConfigDict(protected_namespaces=(), extra="allow")
 
     id: int = Field(
         description="The model version's identifier.",
@@ -376,6 +381,21 @@ class CivitAIModelVersion(HordeModel):
         renamed_to="base_model_type", original_name="baseModelType",
     )
 
+    @property
+    def thumbnail_url(self) -> str:
+        return self.images[0].url
+
+    @property
+    def sfw_thumbnail_url(self) -> str | None:
+        for image in self.images:
+            if image.nsfw in (NSFWLevel.SOFT, None):
+                return image.url
+        return None
+
+    @property
+    def url(self) -> str:
+        return f"https://civitai.com/models/{self.model_id}?modelVersionId={self.id}"
+
 
 class CivitAIModel(HordeSuccess):
     id: int = Field(
@@ -384,7 +404,8 @@ class CivitAIModel(HordeSuccess):
     name: str = Field(
         description="The model name.",
     )
-    description: str = Field(
+    description: str | None = Field(
+        default=None,
         description="The model description as HTML.",
     )
     type: ModelType = Field(
@@ -449,3 +470,18 @@ class CivitAIModel(HordeSuccess):
         if value in translation_table:
             return translation_table[value]
         return value
+
+    @property
+    def thumbnail_url(self) -> str:
+        return self.versions[0].thumbnail_url
+
+    @property
+    def sfw_thumbnail_url(self) -> str | None:
+        for version in self.versions:
+            if url := version.sfw_thumbnail_url:
+                return url
+        return None
+
+    @property
+    def url(self) -> str:
+        return f"https://civitai.com/models/{self.id}"
