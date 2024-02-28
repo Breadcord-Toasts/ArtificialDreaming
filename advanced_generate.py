@@ -96,7 +96,7 @@ class ModelSelect(discord.ui.Select):
             if model.count > 0 and model.type == "image"
         ]
 
-        model_groups: dict[str, list[str] | None] = {
+        self.model_groups: dict[str, list[str] | None] = {
             "SDXL": [
                 "AlbedoBase XL (SDXL)",
                 "Fustercluck",
@@ -117,15 +117,19 @@ class ModelSelect(discord.ui.Select):
             ],
         }
 
+        def get_desc(models: list[str]) -> str:
+            long = ", ".join(sorted(models))
+            return long if len(long) <= 99 else f"{long[:90]}..."
+
         super().__init__(
             placeholder="Select models...",
             options=[
                 discord.SelectOption(
                     label=group_name,
-                    value=",".join(group_models),
-                    description=", ".join(sorted(group_models)),
+                    value=group_name,
+                    description=get_desc(group_models),
                 )
-                for group_name, group_models in model_groups.items()
+                for group_name, group_models in self.model_groups.items()
             ] + [
                 discord.SelectOption(
                     label="Any",
@@ -153,7 +157,7 @@ class ModelSelect(discord.ui.Select):
                 await defer_and_edit(interaction, self.to_modify, self.apis, responded_already=True)
                 return
             case _:
-                self.to_modify.models = self.values[0].split(",")
+                self.to_modify.models = self.model_groups[self.values[0]]
 
         await defer_and_edit(interaction, self.to_modify, self.apis)
 
