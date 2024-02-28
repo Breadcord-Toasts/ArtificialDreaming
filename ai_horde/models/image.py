@@ -178,6 +178,17 @@ class TextualInversion(HordeModel):
         ge=-5, le=5,
     )
 
+    # noinspection PyNestedDecorators
+    @model_validator(mode="before")
+    @classmethod
+    def fix_ids_having_two_names(cls, values: dict[str, Any]) -> dict[str, Any]:
+        if "id" in values:
+            # Why?
+            # TODO: Also renamed fields are wacky and I cant validate my renamed field???
+            #  What was past me *thinking*?
+            values["name"] = str(values.pop("id"))
+        return values
+
 
 class ImageGenerationParams(HordeModel):
     width: int | None = Field(

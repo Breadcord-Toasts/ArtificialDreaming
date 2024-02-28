@@ -5,7 +5,12 @@ from pydantic import Field as PydanticField
 
 
 class HordeModel(BaseModel):
-    # model_config = ConfigDict(extra="forbid")
+    class Config:
+        # TODO: THIS EXISTS?????? RenamedField MIGHT BE USELESS!!!!!!!!!!!
+        # allow_population_by_field_name = True
+        # TODO: Toggle dynamically depending on debug flag?
+        # extra = "forbid"
+        extra = "allow"
 
     def model_dump(self, *args, by_alias: bool = True, **kwargs) -> dict[str, Any]:
         return super().model_dump(*args, by_alias=by_alias, **kwargs)

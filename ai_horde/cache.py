@@ -185,7 +185,8 @@ class Cache:
             return
 
         self.logger.info("Fetching CivitAI models...")
-        self.civitai_models = await self.civitai.get_models(pages=5)
+        self.civitai_models = await self.civitai.get_models(pages=5)  # TODO: Don't hardcode this number
+        # noinspection PyArgumentEqualDefault
         await self._open_and_dump(self._civitai_models_file, [
             json.loads(model.model_dump_json(by_alias=False, exclude_none=True))
             for model in self.civitai_models

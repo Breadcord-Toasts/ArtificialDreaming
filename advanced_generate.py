@@ -98,9 +98,14 @@ class ModelSelect(discord.ui.Select):
 
         model_groups: dict[str, list[str] | None] = {
             "SDXL": [
+                "AlbedoBase XL (SDXL)",
                 "Fustercluck",
                 "ICBINP XL",
-                "AlbedoBase XL (SDXL)",
+                "Pony Diffusion XL"
+                "Anime Illust Diffusion XL"
+                "Juggernaut XL"
+                "Animagine XL"
+                "DreamShaper XL"
             ],
             "Anime": [
                 "Anything v3",
@@ -1026,7 +1031,8 @@ async def get_settings_embeds(generation_request: ImageGenerationRequest, apis: 
             description="\n".join(description),
             colour=discord.Colour.blurple(),
         )
-        .set_footer(text="Click the buttons below to modify the request.")
+        .set_footer(text="Click the buttons below to modify the request. "
+                         "Some models (such as SDXL) may require higher resolutions to work properly.")
         .set_thumbnail(url="attachment://source_image.webp"),
     ]
 

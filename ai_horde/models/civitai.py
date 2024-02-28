@@ -3,7 +3,7 @@ from collections.abc import Sequence
 from enum import Enum
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator, model_validator
+from pydantic import BeforeValidator, ConfigDict, Field, field_validator, model_validator
 
 from .general import HordeModel, HordeSuccess, RenamedField
 
@@ -18,6 +18,7 @@ class ModelType(Enum):
     LOCON = "LoCon"
     CONTROLNET = "Controlnet"
     POSES = "Poses"
+    OTHER = "Other"
 
 
 class ScanResult(Enum):
@@ -41,7 +42,7 @@ class NSFWLevel(Enum):
     X = "X"
 
 
-def validate_dimensions(value: str | Sequence[int, int]| None) -> tuple[int, int] | None:
+def validate_dimensions(value: str | Sequence[int, int] | None) -> tuple[int, int] | None:
     if value is None:
         return None
     # case of already parsed data being passed
@@ -58,7 +59,7 @@ def validate_dimensions(value: str | Sequence[int, int]| None) -> tuple[int, int
 Dimensions = Annotated[tuple[int, int], BeforeValidator(validate_dimensions)]
 
 
-class CivitAIImageMeta(BaseModel):
+class CivitAIImageMeta(HordeModel):
     """Generation parameters for a CivitAI image. Further fields will likely be added at runtime."""
 
     model_config = ConfigDict(protected_namespaces=(), extra="allow")
@@ -104,7 +105,9 @@ class CivitAIImageMeta(BaseModel):
         return {fix_stupid_key_name(key): value for key, value in data.items()}
 
 
-class CivitAIImageMetadata(BaseModel):
+class CivitAIImageMetadata(HordeModel):
+    model_config = ConfigDict(extra="allow")
+
     hash: str = Field(
         description="The image's hash.",
     )
@@ -125,6 +128,8 @@ class CivitAIImageMetadata(BaseModel):
 
 
 class CivitAIImage(HordeSuccess):
+    model_config = ConfigDict(extra="allow")
+
     id: int | None = Field(
         default=None,
         description="The image's identifier.",
@@ -255,6 +260,8 @@ class CivitAIModelFileType(Enum):
     VAE = "VAE"
     CONFIG = "Config"
     TRAINING_DATA = "Training Data"
+    ARCHIVE = "Archive"
+    NEGATIVE = "Negative"
 
 
 class CivitAIModelFile(HordeModel):
@@ -312,7 +319,7 @@ class CivitAIModelFile(HordeModel):
         default=None,  # Why None and not False? Ask the CivitAI devs!
         description="Whether the file is the primary file.",
     )
-    type: CivitAIModelFileType
+    type: CivitAIModelFileType | str  # I can not be bothered to keep up with the random nonsense they put in here
 
 
 class BaseModelType(Enum):
@@ -452,24 +459,11 @@ class CivitAIModel(HordeSuccess):
         # TODO: write description
         renamed_to="allow_no_credit", original_name="allowNoCredit",
     )
-    allow_commercial_use: Literal["Rent", "RentCivit", "Image", "Sell"] | bool | None = RenamedField(
+    # Sorry, but you're on your own on this one. I can not be bothered
+    allow_commercial_use: list[Any] | None = RenamedField(
         default=None,
         renamed_to="allow_commercial_use", original_name="allowCommercialUse",
     )
-
-    # noinspection PyNestedDecorators
-    @field_validator("allow_commercial_use", mode="before")
-    @classmethod
-    def fix_allow_commercial_use(cls, value: Any) -> Any:
-        # WHY?????
-        translation_table = {
-            "True": True,
-            "False": False,
-            "None": None,
-        }
-        if value in translation_table:
-            return translation_table[value]
-        return value
 
     @property
     def thumbnail_url(self) -> str:
