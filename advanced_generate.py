@@ -1031,8 +1031,7 @@ async def get_settings_embeds(generation_request: ImageGenerationRequest, apis: 
             description="\n".join(description),
             colour=discord.Colour.blurple(),
         )
-        .set_footer(text="Click the buttons below to modify the request. "
-                         "Some models (such as SDXL) may require higher resolutions to work properly.")
+        .set_footer(text="Click the buttons below to modify the request.")
         .set_thumbnail(url="attachment://source_image.webp"),
     ]
 
