@@ -254,16 +254,6 @@ class CivitAIModelFileMetadata(HordeModel):
     )
 
 
-class CivitAIModelFileType(Enum):
-    MODEL = "Model"
-    PRUNED_MODEL = "Pruned Model"
-    VAE = "VAE"
-    CONFIG = "Config"
-    TRAINING_DATA = "Training Data"
-    ARCHIVE = "Archive"
-    NEGATIVE = "Negative"
-
-
 class CivitAIModelFile(HordeModel):
     model_config = ConfigDict(protected_namespaces=(), extra="allow")
 
@@ -319,7 +309,7 @@ class CivitAIModelFile(HordeModel):
         default=None,  # Why None and not False? Ask the CivitAI devs!
         description="Whether the file is the primary file.",
     )
-    type: CivitAIModelFileType | str  # I can not be bothered to keep up with the random nonsense they put in here
+    type: Literal["Model", "Pruned Model", "VAE", "Config", "Training Data", "Archive", "Negative"] | str
 
 
 class BaseModelType(Enum):

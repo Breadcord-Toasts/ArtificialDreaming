@@ -40,6 +40,7 @@ class Cache:
         logger: Logger,
         storage_path: Path,
         formatted_cache: bool = False,
+        invalidation_seconds: int = 60 * 60 * 6,
     ):
         self.session = session
         self.horde = horde_api
@@ -48,6 +49,7 @@ class Cache:
         self.logger = logger
         self.storage_path = storage_path
         self.formatted_logs = formatted_cache
+        self.invalidation_seconds = invalidation_seconds
 
         self.styles: list[Style] | None = None
         self._styles_file = self.storage_path / "styles.json"
@@ -80,7 +82,7 @@ class Cache:
         self.logger.info("Cache updated.")
 
     async def update_styles(self) -> None:
-        if not file_outdated(self._styles_file):
+        if not self.file_outdated(self._styles_file):
             if not self.styles:
                 self.styles = await self.load_cache(self._styles_file, model=Style)
             return
@@ -99,7 +101,7 @@ class Cache:
             self.logger.warning(f"Failed to validate {len(errors)} styles, not saving to cache.")
 
     async def update_enhancements(self) -> None:
-        if not file_outdated(self._enhancements_file):
+        if not self.file_outdated(self._enhancements_file):
             if not self.enhancements:
                 self.enhancements = await self.load_cache(self._enhancements_file, model=StyleEnhancement)
             return
@@ -117,7 +119,7 @@ class Cache:
             self.logger.warning(f"Failed to validate {len(errors)} enhancements, not saving to cache.")
 
     async def update_style_categories(self) -> None:
-        if not file_outdated(self._style_categories_file):
+        if not self.file_outdated(self._style_categories_file):
             if not self.style_categories:
                 self.style_categories = await self.load_cache(self._style_categories_file)
             return
@@ -139,7 +141,7 @@ class Cache:
             self.logger.warning("Failed to validate some style categories, not saving to cache.")
 
     async def update_horde_model_reference(self) -> None:
-        if not file_outdated(self._horde_model_reference_file):
+        if not self.file_outdated(self._horde_model_reference_file):
             if not self.horde_model_reference:
                 self.horde_model_reference = await self.load_cache(
                     self._horde_model_reference_file,
@@ -160,7 +162,7 @@ class Cache:
             self.logger.warning(f"Failed to validate {len(errors)} models, not saving to cache.")
 
     async def update_horde_models(self) -> None:
-        if not file_outdated(self._horde_models_file, timeout_seconds=60 * 30):
+        if not self.file_outdated(self._horde_models_file):
             if not self.horde_models:
                 self.horde_models = [
                     ActiveModel.model_validate(model)
@@ -176,7 +178,7 @@ class Cache:
         ])
 
     async def update_civitai_models(self) -> None:
-        if not file_outdated(self._civitai_models_file):
+        if not self.file_outdated(self._civitai_models_file):
             if not self.civitai_models:
                 self.civitai_models = [
                     CivitAIModel.model_validate(model)
@@ -253,14 +255,13 @@ class Cache:
                 errors.append(error)
         return validated, errors
 
+    def file_outdated(self, path: Path) -> bool:
+        if not path.is_file():
+            return True
 
-def file_outdated(path: Path, timeout_seconds: int = 60 * 60 * 2) -> bool:
-    if not path.is_file():
-        return True
-
-    last_modified = path.stat().st_mtime
-    now = time.time()
-    return now - last_modified > timeout_seconds
+        last_modified = path.stat().st_mtime
+        now = time.time()
+        return now - last_modified > self.invalidation_seconds
 
 
 async def fetch_github_json_file(session: aiohttp.ClientSession, url: URL) -> JsonLike:

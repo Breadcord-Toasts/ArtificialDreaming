@@ -442,7 +442,7 @@ class ArtificialDreaming(
             value="\n".join(s for s in (
                 f"[{file.name}]({file.download_url})",
                 f"**Size:** {appropriate_filesize}",
-                f"**Type:** {hacky_camel_case_split(file.type.value)}",
+                f"**Type:** {hacky_camel_case_split(file.type)}",
             ) if s),
             inline=False,
         )

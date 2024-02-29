@@ -101,11 +101,11 @@ class ModelSelect(discord.ui.Select):
                 "AlbedoBase XL (SDXL)",
                 "Fustercluck",
                 "ICBINP XL",
-                "Pony Diffusion XL"
-                "Anime Illust Diffusion XL"
-                "Juggernaut XL"
-                "Animagine XL"
-                "DreamShaper XL"
+                "Pony Diffusion XL",
+                "Anime Illust Diffusion XL",
+                "Juggernaut XL",
+                "Animagine XL",
+                "DreamShaper XL",
             ],
             "Anime": [
                 "Anything v3",
@@ -516,14 +516,21 @@ class GenerationSettingsView(discord.ui.View):
                 ephemeral=True,
             )
         except discord.HTTPException:
-            await interaction.response.send_message(
-                "The request data is too large to send as a message, so it has been attached as a file.",
-                file=discord.File(
-                    io.BytesIO(json.encode()),
-                    filename="request.json",
-                ),
-                ephemeral=True,
-            )
+            small_json = self.generation_request.model_dump_json()
+            try:
+                await interaction.response.send_message(
+                    f"```json\n{small_json}\n```",
+                    ephemeral=True,
+                )
+            except discord.HTTPException:
+                await interaction.response.send_message(
+                    "The request data is too large to send as a message, so it has been attached as a file.",
+                    file=discord.File(
+                        io.BytesIO(json.encode()),
+                        filename="request.json",
+                    ),
+                    ephemeral=True,
+                )
 
     @discord.ui.button(label="Load JSON", style=discord.ButtonStyle.grey, row=4, emoji="\N{OUTBOX TRAY}")
     async def load_json(self, interaction: discord.Interaction, _):
@@ -1270,19 +1277,19 @@ async def process_generation(
     reply_to: discord.Message,
 ) -> discord.Message:
     start_time = time.time()
+    user_account = await apis.horde.get_current_user()
+    is_anon = user_account.id == 0
     try:
         queued_generation = await apis.horde.queue_image_generation(generation_request)
     except HordeRequestError as error:
         if error.code != 403:
             raise
-
-        is_anon = apis.horde.session.headers.get("apikey", "0000000000") == "0000000000"
         return await reply_to.reply(
             embed=discord.Embed(
                 title="You do not have the required kudos to queue this generation",
                 description=(
                     f"{error}\n\n"
-                ) + "**This might be solved by logging in to the horde using `/horde login`**" if is_anon else "",
+                ) + ("**This might be solved by logging in to the horde using `/horde login`**" if is_anon else ""),
                 colour=discord.Colour.red(),
             ),
         )
@@ -1296,7 +1303,7 @@ async def process_generation(
         title="Generating...",
         description=generic_wait_message,
         colour=discord.Colour.blurple(),
-    )
+    ).set_footer(text=f"Using {'anonymous' if is_anon else 'logged in'} account.")
     message = await reply_to.reply(embed=embed)
 
     await asyncio.sleep(5)
