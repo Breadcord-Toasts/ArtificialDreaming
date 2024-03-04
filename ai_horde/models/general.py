@@ -1,4 +1,6 @@
-from typing import Any
+import time
+from collections.abc import Hashable
+from typing import Any, Literal, TypeVar
 
 from pydantic import AliasChoices, BaseModel
 from pydantic import Field as PydanticField
@@ -62,3 +64,39 @@ def RenamedField(  # noqa: N802
         serialization_alias=original_name,
         validation_alias=AliasChoices(original_name, renamed_to),
     )
+
+
+_H = TypeVar("_H", bound=Hashable)
+
+
+class SimpleTimedCache:
+    def __init__(self, timeout_seconds: float) -> None:
+        self.timeout_seconds = timeout_seconds
+        self._cache: dict[Any, dict[Literal["last_accessed", "data"], Any]] = {}
+
+    def _delete_expired(self) -> None:
+        now = time.time()
+        for key, value in self._cache.items():
+            if now - value["last_accessed"] > self.timeout_seconds:
+                del self._cache[key]
+
+    def __getattribute__(self, *args, **kwargs) -> Any:
+        self._delete_expired()
+        return super().__getattribute__(*args, **kwargs)
+
+    def __getitem__(self, key: Hashable) -> Any:
+        if key not in self._cache:
+            return None
+        return self._cache[key]["data"]
+
+    def __setitem__(self, key: Hashable, value: _H) -> _H:
+        self._cache[key] = {"last_accessed": time.time(), "data": value}
+        return value
+
+    def __delitem__(self, key: Hashable) -> None:
+        if key in self._cache:
+            del self._cache[key]
+
+    def __contains__(self, item: Hashable) -> bool:
+        self._delete_expired()
+        return item in self._cache

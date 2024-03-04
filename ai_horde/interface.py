@@ -12,7 +12,7 @@ import aiohttp
 from pydantic import BaseModel
 
 from .models.civitai import CivitAIModel, CivitAIModelVersion, ModelType, SearchCategory, SearchFilter
-from .models.general import HordeRequest, HordeRequestError
+from .models.general import HordeRequest, HordeRequestError, SimpleTimedCache
 from .models.horde_meta import ActiveModel, GenerationCheck, GenerationResponse, HordeNews, HordeUser, Team, Worker
 from .models.image import (
     FinishedImageGeneration,
@@ -254,6 +254,7 @@ class CivitAIAPI:
     def __init__(self, session: aiohttp.ClientSession, *, logger: Logger):
         self.session = session
         self.logger = logger
+        self._cache = SimpleTimedCache(60 * 60 * 12)
 
     async def _fetch_paginated_json_list(self, url: URL, *, pages: int = 1) -> AsyncGenerator[JsonLike, None, None]:
         total_pages = -1
@@ -334,9 +335,16 @@ class CivitAIAPI:
             },
         )
         hits: list[dict[str, Any]] = data["results"][0]["hits"]
-        # TODO: Find some compromise so we don't need to re-fetch the models.
-        #  Perhaps by breaking out a PartialCivitAIModel from CivitAIModel?
-        return [await self.get_model(hit["id"]) for hit in hits]
+        models = []
+        for hit in hits:
+            if hit["id"] in self._cache:
+                models.append(self._cache[hit["id"]])
+            else:
+                # TODO: Find some compromise so we don't need to re-fetch the models.
+                #  Perhaps by breaking out a PartialCivitAIModel from CivitAIModel?
+                model = self._cache[hit["id"]] = await self.get_model(hit["id"])
+                models.append(model)
+        return models
 
 
 async def json_request(
