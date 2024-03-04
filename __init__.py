@@ -1,6 +1,5 @@
 import random
 import sqlite3
-from typing import TYPE_CHECKING
 
 import aiohttp
 import discord
@@ -12,8 +11,8 @@ from discord.user import _UserTag as UserTag
 import breadcord
 from .advanced_generate import GenerationSettingsView, get_settings_embeds
 from .ai_horde.cache import Cache
-from .ai_horde.interface import CivitAIAPI, HordeAPI
-from .ai_horde.models.civitai import ModelType
+from .ai_horde.interface import CivitAIAPI, HordeAPI, SearchCategory
+from .ai_horde.models.civitai import CivitAIModel, CivitAIModelVersion, ModelType, SearchFilter
 from .ai_horde.models.general import HordeRequestError
 from .ai_horde.models.horde_meta import HordeNews
 from .ai_horde.models.image import (
@@ -33,9 +32,6 @@ from .ai_horde.models.other_sources import Style
 from .ai_horde.models.text import TextGenerationRequest
 from .helpers import APIPackage, fetch_image
 from .login import LoginButtonView
-
-if TYPE_CHECKING:
-    from .ai_horde.models.civitai import CivitAIModel, CivitAIModelVersion
 
 
 class NoneWithProperties:
@@ -172,12 +168,14 @@ class ArtificialDreaming(
             for style in self.cache.styles:
                 if style.name.lower() == style_name:
                     return style
+            return None
 
         def from_category(category_name: str) -> Style | None:
             category = self.cache.style_categories.get(category_name)
             if category is not None:
                 style_name: str = random.choice(category)
                 return to_style(style_name)
+            return None
 
         name = name.lower().strip()
         return to_style(name) or from_category(name)
@@ -448,6 +446,94 @@ class ArtificialDreaming(
         )
 
         await ctx.reply(embed=embed)
+
+    @commands.hybrid_command()
+    async def lora_search(self, ctx: commands.Context, query: str | None = None) -> None:
+        if query is None:
+            models = await self.civitai.get_models(type=ModelType.LORA)
+        else:
+            models = await self.civitai.search(
+                query,
+                SearchCategory.MODELS,
+                filters=SearchFilter().model_type(ModelType.LORA),
+                limit=5,
+            )
+        view = ModelBrowserEmbed(models)
+        await ctx.reply(embed=await view.get_embed(), view=view)
+
+    @commands.hybrid_command()
+    async def ti_search(self, ctx: commands.Context, query: str | None = None) -> None:
+        if query is None:
+            models = await self.civitai.get_models(type=ModelType.TEXTUALINVERSION)
+        else:
+            models = await self.civitai.search(
+                query,
+                SearchCategory.MODELS,
+                filters=SearchFilter().model_type(ModelType.TEXTUALINVERSION),
+                limit=5,
+            )
+        view = ModelBrowserEmbed(models)
+        await ctx.reply(embed=await view.get_embed(), view=view)
+
+
+class ModelBrowserEmbed(discord.ui.View):
+    def __init__(self, models: list[CivitAIModel], **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.models = models
+        self.index = 0
+
+    @discord.ui.button(
+        label="Previous", style=discord.ButtonStyle.grey, emoji="\N{BLACK LEFT-POINTING TRIANGLE}", disabled=True,
+    )
+    async def previous_page(self, interaction: discord.Interaction, _) -> None:
+        self.index -= 1
+        self.update_buttons()
+        await interaction.response.edit_message(embed=await self.get_embed(), view=self)
+
+    @discord.ui.button(
+        label="Next", style=discord.ButtonStyle.grey, emoji="\N{BLACK RIGHT-POINTING TRIANGLE}",
+    )
+    async def next_page(self, interaction: discord.Interaction, _) -> None:
+        self.index += 1
+        self.update_buttons()
+        await interaction.response.edit_message(embed=await self.get_embed(), view=self)
+
+    def update_buttons(self) -> None:
+        self.previous_page.disabled = self.index <= 0
+        self.next_page.disabled = self.index >= len(self.models)-1
+
+    async def get_embed(self) -> discord.Embed:
+        model = self.models[self.index]
+
+        description = "\n".join((
+            f"**Model type:** {model.type.value}",
+            f"**Tags:** {', '.join(model.tags[:7])}",
+            f"**NSFW:** {model.nsfw}",
+        ))
+        embed = discord.Embed(
+            title=model.name,
+            description=description,
+            url=model.url,
+            colour=discord.Colour.random(seed=model.id),
+        )
+        embed.set_image(url=next((image.url for image in model.versions[0].images if not image.nsfw), None))
+        embed.set_footer(text=f"Model {self.index+1}/{len(self.models)}")
+
+        if len(model.versions) > 1:
+            versions_text = ""
+            for i, version in enumerate(model.versions):
+                text = f"[{version.name}]({version.url})"
+                if len(text) + len(versions_text) > 1024 or i > 6:
+                    if i+1 < len(model.versions):
+                        versions_text += f" and {len(model.versions) - i} more"
+                    break
+                versions_text += text + ", "
+            embed.add_field(
+                name="Versions",
+                value=versions_text,
+            )
+
+        return embed
 
 
 async def setup(bot: breadcord.Bot):

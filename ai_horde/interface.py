@@ -1,6 +1,7 @@
 import asyncio
 import time
 from collections.abc import AsyncGenerator
+from enum import Enum
 from http import HTTPMethod
 from json import loads as json_loads
 from logging import Logger
@@ -10,7 +11,7 @@ from urllib.parse import parse_qsl, quote, urlencode, urlparse
 import aiohttp
 from pydantic import BaseModel
 
-from .models.civitai import CivitAIModel, CivitAIModelVersion, ModelType
+from .models.civitai import CivitAIModel, CivitAIModelVersion, ModelType, SearchCategory, SearchFilter
 from .models.general import HordeRequest, HordeRequestError
 from .models.horde_meta import ActiveModel, GenerationCheck, GenerationResponse, HordeNews, HordeUser, Team, Worker
 from .models.image import (
@@ -27,7 +28,18 @@ from .models.text import FinishedTextGeneration, TextGenerationRequest, TextGene
 
 class URL(str):
     def __truediv__(self, other: Any) -> Self:
+        """URL / str - add a path to the URL."""
         return self.__class__(f"{self.removesuffix('/')}/{str(other).removeprefix('/')}")
+
+    def __rtruediv__(self, other: Any) -> Self:
+        """Str / URL - add a subdomain to the URL."""
+        protocol, rest = self.split("://", 1)
+        return self.__class__(f"{protocol}://{other!s}.{rest}")
+
+    @property
+    def base(self):
+        scheme, netloc, *_ = urlparse(self)
+        return self.__class__(f"{scheme}://{netloc}")
 
     @property
     def query_params(self) -> dict[str, str]:
@@ -288,6 +300,44 @@ class CivitAIAPI:
             version = await self.get_model_version(version)
         return await self.get_model(version.model_id)
 
+    async def search(
+        self,
+        query: str,
+        category: SearchCategory | str,
+        *,
+        filters: SearchFilter | None = None,
+        limit: int = 20,
+    ) -> list[CivitAIModel]:
+        """Warning!
+        This method is not officially supported by CivitAI and may break at any time.
+        It is also very expensive.
+        """
+        data: dict[str, list[dict[str, Any]]] = await json_request(
+            self.session, HTTPMethod.POST,
+            "meilisearch-v1-6" / CIVITAI_API_DOMAIN.base / "multi-search",
+            headers={
+                "Content-type": "application/json",
+                # Auth token extracted from CivitAI website (NEXT_PUBLIC_SEARCH_CLIENT_KEY)
+                "Authorization": "Bearer 102312c2b83ea0ef9ac32e7858f742721bbfd7319a957272e746f84fd1e974af",
+                # Again, stolen from browser
+                "X-Meilisearch-Client": "Meilisearch instant-meilisearch (v0.13.5) ; Meilisearch JavaScript (v0.34.0)",
+            },
+            data={
+                "queries": [
+                    {
+                        "q": query,
+                        "indexUid": category.value if isinstance(category, Enum) else category,
+                        "limit": limit,
+                        "offset": 0,
+                    } | ({"filter": filters.serialize} if filters else {}),
+                ],
+            },
+        )
+        hits: list[dict[str, Any]] = data["results"][0]["hits"]
+        # TODO: Find some compromise so we don't need to re-fetch the models.
+        #  Perhaps by breaking out a PartialCivitAIModel from CivitAIModel?
+        return [await self.get_model(hit["id"]) for hit in hits]
+
 
 async def json_request(
     session: aiohttp.ClientSession,
@@ -295,6 +345,7 @@ async def json_request(
     url: str,
     *,
     data: dict[str, JsonLike] | BaseModel | None = None,
+    headers: dict[str, str] | None = None,
 ) -> JsonLike:
     """Helper function to make a request with a pydantic model as the data.
 
@@ -302,19 +353,28 @@ async def json_request(
     :param method: HTTP method to use
     :param url: URL to make the request to
     :param data: Data to send, either a pydantic model or a dict that can be serialised to JSON
+    :param headers: Additional headers to send
     :return: The JSON response as a dict
     """
     if isinstance(data, HordeRequest):
         response = await session.request(
             method,
             url,
+            headers=headers,
             # This is a bit of a hack, but not sure if there's a better way.
             json=json_loads(data.model_dump_json()),
         )
     else:
-        response = await session.request(method, url, json=data)
+        response = await session.request(method, url, headers=headers, json=data)
     if not response.ok:
-        json: JsonLike = await response.json()
+        try:
+            json: JsonLike = await response.json()
+        except aiohttp.ContentTypeError:
+            raise HordeRequestError(
+                message=(await response.content.read()).decode(errors="replace") or response.reason,
+                code=response.status,
+                response_headers=dict(response.headers),
+            )
         message: str | None = None
         if isinstance(json, dict):
             message = json.get("message", response.reason)

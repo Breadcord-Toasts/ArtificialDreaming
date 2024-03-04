@@ -1,4 +1,5 @@
 import datetime
+from collections import defaultdict
 from collections.abc import Sequence
 from enum import Enum
 from typing import Annotated, Any, Literal
@@ -469,3 +470,32 @@ class CivitAIModel(HordeSuccess):
     @property
     def url(self) -> str:
         return f"https://civitai.com/models/{self.id}"
+
+
+class SearchCategory(Enum):
+    MODELS = "models_v5"
+    IMAGES = "images_v3"
+    USERS = "users_v2"
+    ARTICLES = "articles_v3"
+    BOUNTIES = "bounties"
+    COLLECTIONS = "collections"
+
+
+class SearchFilter:
+    def __init__(self) -> None:
+        self._filters: dict[str, list[str]] = defaultdict(list)
+
+    @property
+    def serialize(self) -> list[list[str]]:
+        return [
+            [f'"{key}"="{value}"' for value in values]
+            for key, values in self._filters.items()
+        ]
+
+    def model_type(self, model_type: ModelType, /) -> "SearchFilter":
+        self._filters["type"].append(model_type.value)
+        return self
+
+    def base_model_type(self, base_model: str, /) -> "SearchFilter":
+        self._filters["version.baseModel"].append(base_model)
+        return self
