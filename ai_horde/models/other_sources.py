@@ -1,5 +1,5 @@
 from collections.abc import Mapping, MutableMapping, Sequence
-from enum import Enum
+from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import ConfigDict, Field, model_validator
@@ -195,7 +195,7 @@ class Style(StyleBase):
 
 
 # region Model Reference
-class SupportedFeature(Enum):
+class SupportedFeature(StrEnum):
     HIRES_FIX = "hires_fix"
     LORAS = "loras"
     INPAINTING = "inpainting"

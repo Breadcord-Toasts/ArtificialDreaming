@@ -412,6 +412,7 @@ class GenerationSettingsView(discord.ui.View):
         self.resolution_select = ResolutionSelect(modify=self.generation_request, apis=self.apis)
         self.add_item(self.resolution_select)
 
+        self._set_nsfw(self.generation_request.nsfw)
         # TODO: Put support for post processors somewhere?
         #  Might need to split out lora/ti adding to another message, and also put post processors there.
         #  Remember to deal with facefixer_strength?

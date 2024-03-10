@@ -433,6 +433,14 @@ class ImageGenerationRequest(HordeRequest):
         description="If true, the estimated kudo cost of the request will be returned instead of generating an image.",
     )
 
+    allow_downgrade: bool | None = Field(
+        default=None,
+        description=(
+            "If true, the request will be allowed to be downgraded in case the upfront kudos cost is not met. "
+            "This means that resolution will be lowered while keeping the aspect ratio the same."
+        ),
+    )
+
     shared: bool | None = Field(
         default=None,
         description=(

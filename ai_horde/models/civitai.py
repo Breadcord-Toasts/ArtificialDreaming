@@ -1,7 +1,7 @@
 import datetime
 from collections import defaultdict
 from collections.abc import Sequence
-from enum import Enum
+from enum import StrEnum
 from typing import Annotated, Any, Literal
 
 from pydantic import BeforeValidator, ConfigDict, Field, field_validator, model_validator
@@ -10,7 +10,7 @@ from .general import HordeModel, HordeSuccess, RenamedField
 
 
 # noinspection SpellCheckingInspection
-class ModelType(Enum):
+class ModelType(StrEnum):
     CHECKPOINT = "Checkpoint"
     TEXTUALINVERSION = "TextualInversion"
     HYPERNETWORK = "Hypernetwork"
@@ -19,10 +19,11 @@ class ModelType(Enum):
     LOCON = "LoCon"
     CONTROLNET = "Controlnet"
     POSES = "Poses"
+    WORKFLOWS = "Workflows"
     OTHER = "Other"
 
 
-class ScanResult(Enum):
+class ScanResult(StrEnum):
     PENDING = "Pending"
     SUCCESS = "Success"
     DANGER = "Danger"
@@ -30,14 +31,14 @@ class ScanResult(Enum):
 
 
 # noinspection SpellCheckingInspection
-class CivitAIFileFormat(Enum):
+class CivitAIFileFormat(StrEnum):
     SAFETENSOR = "SafeTensor"
     PICKLETENSOR = "PickleTensor"
     OTHER = "Other"
     DIFFUSERS = "Diffusers"
 
 
-class NSFWLevel(Enum):
+class NSFWLevel(StrEnum):
     MATURE = "Mature"
     SOFT = "Soft"
     X = "X"
@@ -287,6 +288,7 @@ class CivitAIModelFile(HordeModel):
         renamed_to="pickle_scan", original_name="pickleScanResult",
     )
     pickle_scan_message: str | None = RenamedField(
+        default=None,
         description="The message from the pickle scan.",
         renamed_to="pickle_scan_message", original_name="pickleScanMessage",
     )
@@ -300,6 +302,7 @@ class CivitAIModelFile(HordeModel):
         renamed_to="virus_scan_message", original_name="virusScanMessage",
     )
     scanned_at: datetime.datetime | None = RenamedField(
+        default=None,
         description="The date the file was scanned.",
         renamed_to="scanned_at", original_name="scannedAt",
     )
@@ -307,13 +310,13 @@ class CivitAIModelFile(HordeModel):
         description="The file's metadata.",
     )
     primary: bool | None = Field(
-        default=None,  # Why None and not False? Ask the CivitAI devs!
+        default=None,
         description="Whether the file is the primary file.",
     )
     type: Literal["Model", "Pruned Model", "VAE", "Config", "Training Data", "Archive", "Negative"] | str
 
 
-class BaseModelType(Enum):
+class BaseModelType(StrEnum):
     STANDARD = "Standard"
     INPAINTING = "Inpainting"
 
@@ -343,7 +346,8 @@ class CivitAIModelVersion(HordeModel):
         description="The model version's last update date.",
         renamed_to="updated_at", original_name="updatedAt",
     )
-    published_at: datetime.datetime = RenamedField(
+    published_at: datetime.datetime | None = RenamedField(
+        default=None,
         description="The model version's publication date.",
         renamed_to="published_at", original_name="publishedAt",
     )
@@ -472,7 +476,7 @@ class CivitAIModel(HordeSuccess):
         return f"https://civitai.com/models/{self.id}"
 
 
-class SearchCategory(Enum):
+class SearchCategory(StrEnum):
     MODELS = "models_v5"
     IMAGES = "images_v3"
     USERS = "users_v2"
@@ -493,7 +497,7 @@ class SearchFilter:
         ]
 
     def model_type(self, model_type: ModelType, /) -> "SearchFilter":
-        self._filters["type"].append(model_type.value)
+        self._filters["type"].append(model_type)
         return self
 
     def base_model_type(self, base_model: str, /) -> "SearchFilter":

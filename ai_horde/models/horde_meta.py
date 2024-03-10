@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import datetime  # noqa: TCH003
-from enum import Enum
+from enum import StrEnum
 from typing import Any, Literal
 
 from pydantic import Field, field_validator
@@ -52,7 +52,7 @@ class HordeNews(HordeSuccess):
 # endregion
 
 
-class WorkerType(Enum):
+class WorkerType(StrEnum):
     IMAGE = "image"
     TEXT = "text"
     INTERROGATION = "interrogation"

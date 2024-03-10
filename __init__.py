@@ -302,6 +302,7 @@ class ArtificialDreaming(
                     cfg_scale=2.0,
                     image_count=1,
                 ),
+                allow_downgrade=True,
                 replacement_filter=True,
             )
         try:
