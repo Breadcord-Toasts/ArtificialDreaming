@@ -30,7 +30,7 @@ from .ai_horde.models.image import (
 )
 from .ai_horde.models.other_sources import Style
 from .ai_horde.models.text import TextGenerationRequest
-from .helpers import APIPackage, fetch_image
+from .helpers import APIPackage, fetch_image, report_error
 from .login import LoginButtonView
 
 
@@ -317,14 +317,15 @@ class ArtificialDreaming(
                     ],
                 )
         except HordeRequestError as error:
-            await response.edit(content=f"Error occurred while generating image: {error}")
-        else:
-            await response.edit(
-                content=(
-                    "Finished generation. \n"
-                    + (f"Style: {chosen_style.name}" if chosen_style is not None else "")
-                ),
-            )
+            await report_error(ctx, error)
+            return
+
+        await response.edit(
+            content=(
+                "Finished generation. \n"
+                + (f"Style: {chosen_style.name}" if chosen_style is not None else "")
+            ),
+        )
 
     @commands.hybrid_command()
     async def describe(self, ctx: commands.Context, image_url: str) -> None:
@@ -336,7 +337,7 @@ class ArtificialDreaming(
             ))
             result: CaptionResult = finished_interrogation.forms[0].result
         except HordeRequestError as error:
-            await response.edit(content=f"Error occurred while interrogating image: {error}")
+            await report_error(ctx, error)
         else:
             await response.edit(content=result.caption)
 
@@ -371,7 +372,7 @@ class ArtificialDreaming(
                 embeds=await get_settings_embeds(generation_request, apis),
             )
         except HordeRequestError as error:
-            await ctx.send(f"Encountered an error from the AI Horde: {error}")
+            await report_error(ctx, error)
 
     @commands.hybrid_command(description="Get info about a model from CivitAI.")
     @app_commands.describe(model_id="The ID as shown in the CivitAI URL.")
@@ -408,7 +409,7 @@ class ArtificialDreaming(
             colour=discord.Colour.random(seed=model.id),
             description="\n".join(s for s in (
                 f"Version of [{model.name}]({model.url})" if version else "",
-                f"**Model type:** {hacky_camel_case_split(model.type.value)}",
+                f"**Model type:** {hacky_camel_case_split(model.type)}",
                 f"**NSFW:** {model.nsfw}" if model.nsfw else "",
             ) if s),
         )
@@ -507,7 +508,7 @@ class ModelBrowserEmbed(discord.ui.View):
         model = self.models[self.index]
 
         description = "\n".join((
-            f"**Model type:** {model.type.value}",
+            f"**Model type:** {model.type}",
             f"**Tags:** {', '.join(model.tags[:7])}",
             f"**NSFW:** {model.nsfw}",
         ))

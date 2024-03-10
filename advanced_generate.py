@@ -25,7 +25,7 @@ from .ai_horde.models.image import (
     TextualInversion,
     TIPlacement,
 )
-from .helpers import APIPackage, fetch_image
+from .helpers import APIPackage, fetch_image, report_error
 
 
 def strip_codeblock(string: str, /) -> str:
@@ -59,14 +59,16 @@ class CustomModelsModal(discord.ui.Modal, title="Custom model"):
     )
 
     async def on_submit(self, interaction: Interaction, /) -> None:
-        models = [
+        chosen_models: list[str] = [
             model.strip()
             for model in self.models_input.value.split(",")
             if model.strip()
         ]
-        possible_models = tuple(model.name for model in self._possible_models)
+        possible_models = {model.name.lower(): model.name for model in self._possible_models}
+        models = [possible_models.get(model.lower()) for model in chosen_models]
+
         for model in models:
-            if model not in possible_models:
+            if model is None:
                 await interaction.response.send_message(
                     (
                         f"Model {model!r} is not available. "
@@ -364,10 +366,18 @@ class AdvancedOptionsModal(discord.ui.Modal, title="More generation options"):
         )
         self.add_item(self.denoising_strength)
 
+        self.clip_skip = discord.ui.TextInput(
+            label="Clip skip - 1 \u2264 layers \u2264 12",
+            placeholder="Enter a clip skip...",
+            required=False,
+            default=self.current_request.params.clip_skip,
+        )
+        self.add_item(self.clip_skip)
+
     async def on_submit(self, interaction: Interaction, /) -> None:
-        cfg_scale = self.cfg_scale.value.strip()
-        cfg_scale = max(0.0, min(100.0, float(cfg_scale))) if cfg_scale else None
-        self.current_request.params.cfg_scale = cfg_scale
+        self.current_request.params.cfg_scale = self._parse_float(self.cfg_scale.value, 0.0, 100.0)
+        self.current_request.params.denoising_strength = self._parse_float(self.denoising_strength.value, 0.01, 1.0)
+        self.current_request.params.clip_skip = self._parse_int(self.clip_skip.value, 1, 12)
 
         if (key := self.sampler.value.strip().upper()) in Sampler.__members__:
             sampler = Sampler[key]
@@ -375,14 +385,23 @@ class AdvancedOptionsModal(discord.ui.Modal, title="More generation options"):
             sampler = self.sampler.value.strip()
         self.current_request.params.sampler = sampler
 
-        denoising_strength = self.denoising_strength.value.strip()
-        denoising_strength = max(0.01, min(1.0, float(denoising_strength))) if denoising_strength else None
-        self.current_request.params.denoising_strength = denoising_strength
-
         await defer_and_edit(interaction, self.current_request, self.apis)
 
+    @staticmethod
+    def _parse_float(value: str, /, min_value: float, max_value: float) -> float | None:
+        value = value.strip()
+        return max(min_value, min(max_value, float(value))) if value else None
+
+    @staticmethod
+    def _parse_int(value: str, /, min_value: int, max_value: int) -> int | None:
+        value = value.strip()
+        return max(min_value, min(max_value, int(value))) if value else None
+
     async def on_error(self, interaction: Interaction, error: Exception, /) -> None:
-        await interaction.response.send_message(str(error), ephemeral=True)
+        try:
+            await interaction.response.send_message(str(error), ephemeral=True)
+        except discord.InteractionResponded:
+            await report_error(interaction, error)
         raise error
 
 
@@ -504,9 +523,9 @@ class GenerationSettingsView(discord.ui.View):
             if hasattr(item, "enabled"):
                 item.enabled = False
 
-        await interaction.response.defer()
         await interaction.message.edit(view=self)
-        await process_generation(self.generation_request, apis=self.apis, reply_to=interaction.message)
+        await interaction.response.defer()
+        await process_generation(interaction, self.generation_request, apis=self.apis, reply_to=interaction.message)
 
     @discord.ui.button(label="Get JSON", style=discord.ButtonStyle.grey, row=4, emoji="\N{INBOX TRAY}")
     async def get_json(self, interaction: discord.Interaction, _):
@@ -1032,10 +1051,10 @@ async def get_settings_embeds(generation_request: ImageGenerationRequest, apis: 
     append_truthy("Image count", generation_request.params.image_count or 1)
     append_truthy(
         "Control type",
-        generation_request.params.control_type.value if generation_request.params.control_type else None,
+        generation_request.params.control_type if generation_request.params.control_type else None,
     )
     append_truthy("Denoising strength", generation_request.params.denoising_strength)
-    append_truthy("Sampler", sampler.value if (sampler := generation_request.params.sampler) else None)
+    append_truthy("Sampler", generation_request.params.sampler or None)
 
     embeds = [
         discord.Embed(
@@ -1095,7 +1114,7 @@ async def get_finished_embed(
         f"{finished_generation.finished}/{generation_request.params.image_count or 1}",
     )
     append_truthy("Denoising strength", generation_request.params.denoising_strength)
-    append_truthy("Sampler", sampler.value if (sampler := generation_request.params.sampler) else None)
+    append_truthy("Sampler", sampler if (sampler := generation_request.params.sampler) else None)
     append_truthy("LoRAs", ", ".join(lora.identifier for lora in generation_request.params.loras or []))
     append_truthy(
         "Textual inversions",
@@ -1242,9 +1261,17 @@ class AttachmentDeletionView(discord.ui.View):
 
 
 class DeleteOrRetryView(AttachmentDeletionView):
-    def __init__(self, generation_params: ImageGenerationRequest, apis: APIPackage, required_votes: int = 1) -> None:
+    def __init__(
+        self,
+        *,
+        generation_params: ImageGenerationRequest,
+        finished_generation_status: ImageGenerationStatus,
+        apis: APIPackage,
+        required_votes: int = 1,
+    ) -> None:
         super().__init__(required_votes=required_votes)
         self.generation_params = generation_params
+        self.finished_generation_status = finished_generation_status
         self.apis = apis
 
     @discord.ui.button(
@@ -1253,7 +1280,13 @@ class DeleteOrRetryView(AttachmentDeletionView):
     )
     async def retry(self, interaction: discord.Interaction, _):
         await interaction.response.defer()
-        await process_generation(self.generation_params, apis=self.apis, reply_to=interaction.message)
+        await process_generation(
+            interaction=interaction,
+            generation_request=self.generation_params,
+            apis=self.apis,
+            reply_to=interaction.message,
+            edit=any(generation.censored for generation in self.finished_generation_status.generations)
+        )
 
     @discord.ui.button(
         label="Retry and edit", style=discord.ButtonStyle.blurple,
@@ -1272,28 +1305,30 @@ class DeleteOrRetryView(AttachmentDeletionView):
 
 
 async def process_generation(
+    interaction: discord.Interaction,
     generation_request: ImageGenerationRequest,
     *,
     apis: APIPackage,
     reply_to: discord.Message,
-) -> discord.Message:
+    edit: bool = False,
+) -> discord.Message | None:
     start_time = time.time()
     user_account = await apis.horde.get_current_user()
     is_anon = user_account.id == 0
     try:
         queued_generation = await apis.horde.queue_image_generation(generation_request)
     except HordeRequestError as error:
-        if error.code != 403:
-            raise
-        return await reply_to.reply(
-            embed=discord.Embed(
+        if error.code == 403:
+            embed = discord.Embed(
                 title="You do not have the required kudos to queue this generation",
                 description=(
                     f"{error}\n\n"
                 ) + ("**This might be solved by logging in to the horde using `/horde login`**" if is_anon else ""),
                 colour=discord.Colour.red(),
-            ),
-        )
+            )
+            return await interaction.followup.send(embed=embed, ephemeral=True)
+
+        return await report_error(interaction, error)
 
     requested_images = generation_request.params.image_count or 1
     generic_wait_message = (
@@ -1305,7 +1340,11 @@ async def process_generation(
         description=generic_wait_message,
         colour=discord.Colour.blurple(),
     ).set_footer(text=f"Using {'anonymous' if is_anon else 'logged in'} account.")
-    message = await reply_to.reply(embed=embed)
+    if edit:
+        await reply_to.edit(embed=embed)
+        message = reply_to
+    else:
+        message = await reply_to.reply(embed=embed)
 
     await asyncio.sleep(5)
 
@@ -1348,5 +1387,10 @@ async def process_generation(
             )
             for generation in generation_status.generations
         ],
-        view=DeleteOrRetryView(required_votes=2, generation_params=generation_request, apis=apis),
+        view=DeleteOrRetryView(
+            required_votes=2,
+            generation_params=generation_request,
+            finished_generation_status=generation_status,
+            apis=apis
+        ),
     )

@@ -54,7 +54,7 @@ def validate_dimensions(value: str | Sequence[int, int] | None) -> tuple[int, in
 
     assert isinstance(value, str), "Must be a string"
     split = value.split("x", maxsplit=1)
-    assert len(split) == 2, 'Must be in the format "widthxheight"'
+    assert len(split) == 2, 'Must be in the format "WIDTHxHEIGHT"'
     return int(split[0]), int(split[1])
 
 
