@@ -25,7 +25,7 @@ from .ai_horde.models.image import (
     TextualInversion,
     TIPlacement,
 )
-from .helpers import APIPackage, fetch_image, report_error
+from .helpers import APIPackage, fetch_image, report_error, resize_to_match_area
 
 
 def strip_codeblock(string: str, /) -> str:
@@ -103,7 +103,6 @@ class ModelSelect(discord.ui.Select):
                 "AlbedoBase XL (SDXL)",
                 "Fustercluck",
                 "ICBINP XL",
-                "Pony Diffusion XL",
                 "Anime Illust Diffusion XL",
                 "Juggernaut XL",
                 "Animagine XL",
@@ -203,8 +202,8 @@ class ResolutionSelect(discord.ui.Select):
             "Landscape": (base_res * 1.5, base_res),
             # Large (1024 base)
             "Square (Large)": (base_res * 2, base_res * 2),
-            "Portrait (Large)": (base_res * 2, base_res * 3),
-            "Landscape (Large)": (base_res * 3, base_res * 2),
+            "Portrait (Large)": resize_to_match_area((2, 3), (base_res*2)**2),
+            "Landscape (Large)": resize_to_match_area((3, 2), (base_res*2)**2),
 
             "Custom": None,
         }

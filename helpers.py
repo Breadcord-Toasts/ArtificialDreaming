@@ -14,8 +14,8 @@ __all__ = [
     "fetch_image",
     "APIPackage",
     "report_error",
+    "resize_to_match_area",
 ]
-
 
 
 async def fetch_image(image: Base64Image | str, session: aiohttp.ClientSession) -> io.BytesIO:
@@ -53,3 +53,13 @@ async def report_error(
         return
 
     raise ValueError(f"Invalid context type: {type(context)}")
+
+
+def resize_to_match_area(aspect_ratio: tuple[int, int], target_area: int, multiple_of: int = 64) -> tuple[int, int]:
+    current_area = aspect_ratio[0] * aspect_ratio[1]
+    scale_factor = (target_area / current_area) ** 0.5
+    new_width = int(aspect_ratio[0] * scale_factor)
+    new_height = int(aspect_ratio[1] * scale_factor)
+    new_width = ((new_width + multiple_of // 2) // multiple_of) * multiple_of
+    new_height = ((new_height + multiple_of // 2) // multiple_of) * multiple_of
+    return new_width, new_height
