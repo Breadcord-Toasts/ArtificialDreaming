@@ -25,7 +25,7 @@ from .ai_horde.models.image import (
     TextualInversion,
     TIPlacement,
 )
-from .helpers import APIPackage, fetch_image, report_error, resize_to_match_area
+from .helpers import APIPackage, fetch_image, report_error, resize_to_match_area, LongLastingView
 
 
 def strip_codeblock(string: str, /) -> str:
@@ -404,7 +404,7 @@ class AdvancedOptionsModal(discord.ui.Modal, title="More generation options"):
         raise error
 
 
-class GenerationSettingsView(discord.ui.View):
+class GenerationSettingsView(LongLastingView):
     def __init__(
         self,
         apis: APIPackage,
@@ -412,7 +412,7 @@ class GenerationSettingsView(discord.ui.View):
         author_id: int,
         **kwargs,
     ) -> None:
-        super().__init__(**kwargs)
+        super().__init__()
         self.author_id = author_id
         self.apis = apis
         self.logger = apis.logger
@@ -709,7 +709,7 @@ class TextualInversionPickerModal(discord.ui.Modal, title="Textual Inversion"):
         await interaction.response.send_message(str(error), ephemeral=True)
 
 
-class LoRAPickerView(discord.ui.View):
+class LoRAPickerView(LongLastingView):
     def __init__(
         self,
         apis: APIPackage,
@@ -718,7 +718,7 @@ class LoRAPickerView(discord.ui.View):
         default_tis: list[TextualInversion] | None,
         **kwargs,
     ) -> None:
-        super().__init__(**kwargs)
+        super().__init__()
         self.author_id = author_id
         self.apis = apis
 
@@ -824,7 +824,7 @@ async def get_source_image_params(generation_request: ImageGenerationRequest, ap
     )
 
 
-class SourceImageView(discord.ui.View):
+class SourceImageView(LongLastingView):
     def __init__(
         self,
         apis: APIPackage,
@@ -832,7 +832,7 @@ class SourceImageView(discord.ui.View):
         generation_request: ImageGenerationRequest,
         **kwargs,
     ) -> None:
-        super().__init__(**kwargs)
+        super().__init__()
         self.author_id = author_id
         self.apis = apis
         self.generation_request = generation_request
@@ -1125,11 +1125,12 @@ async def get_finished_embed(
         for generation in finished_generation.generations
     }))
 
+    was_censored = len(finished_generation.generations) <= 1 and finished_generation.generations[0].censored
     embeds = [
         discord.Embed(
-            title="Generation finished",
+            title="Generation finished" if not was_censored else "Generation censored",
             description="\n".join(description),
-            colour=discord.Colour.green(),
+            colour=discord.Colour.green() if not was_censored else discord.Colour.red(),
         ),
     ]
 
@@ -1235,14 +1236,14 @@ def check_truthy(value: str) -> bool | None:
     return None
 
 
-class AttachmentDeletionView(discord.ui.View):
+class AttachmentDeletionView(LongLastingView):
     def __init__(
         self,
         *args,
         required_votes: int = 1,
         **kwargs,
     ) -> None:
-        super().__init__(*args, **kwargs)
+        super().__init__()
         self.required_votes = required_votes
         self.already_voted: set[int] = set()
 
@@ -1340,7 +1341,7 @@ async def process_generation(
         colour=discord.Colour.blurple(),
     ).set_footer(text=f"Using {'anonymous' if is_anon else 'logged in'} account.")
     if edit:
-        await reply_to.edit(embed=embed)
+        await reply_to.edit(embed=embed, attachments=[])
         message = reply_to
     else:
         message = await reply_to.reply(embed=embed)
@@ -1385,7 +1386,7 @@ async def process_generation(
                 filename=f"{generation.id}.webp",
             )
             for generation in generation_status.generations
-        ],
+        ] if len(generation_status.generations) > 1 or not generation_status.generations[0].censored else [],
         view=DeleteOrRetryView(
             required_votes=2,
             generation_params=generation_request,

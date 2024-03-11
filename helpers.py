@@ -63,3 +63,8 @@ def resize_to_match_area(aspect_ratio: tuple[int, int], target_area: int, multip
     new_width = ((new_width + multiple_of // 2) // multiple_of) * multiple_of
     new_height = ((new_height + multiple_of // 2) // multiple_of) * multiple_of
     return new_width, new_height
+
+
+class LongLastingView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=60*60)

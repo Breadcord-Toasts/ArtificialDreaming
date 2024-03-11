@@ -30,7 +30,7 @@ from .ai_horde.models.image import (
 )
 from .ai_horde.models.other_sources import Style
 from .ai_horde.models.text import TextGenerationRequest
-from .helpers import APIPackage, fetch_image, report_error
+from .helpers import APIPackage, fetch_image, report_error, LongLastingView
 from .login import LoginButtonView
 
 
@@ -478,9 +478,9 @@ class ArtificialDreaming(
         await ctx.reply(embed=await view.get_embed(), view=view)
 
 
-class ModelBrowserEmbed(discord.ui.View):
+class ModelBrowserEmbed(LongLastingView):
     def __init__(self, models: list[CivitAIModel], **kwargs) -> None:
-        super().__init__(**kwargs)
+        super().__init__()
         self.models = models
         self.index = 0
 
