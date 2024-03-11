@@ -15,6 +15,7 @@ __all__ = [
     "APIPackage",
     "report_error",
     "resize_to_match_area",
+    "LongLastingView",
 ]
 
 

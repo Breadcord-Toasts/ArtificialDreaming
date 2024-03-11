@@ -367,7 +367,7 @@ class ImageGenerationRequest(HordeRequest):
             "If false, the request will be blocked and the user's IP will get a timeout. "
             # "This setting is ignored and treated as false if the prompt exceeds 1000 characters."
             "For further information, see "
-            "https://github.com/Haidra-Org/AI-Horde/blob/main/FAQ.md#can-you-explain-how-the-anti-csam-regex-filter-works"  # noqa: E501
+            "https://github.com/Haidra-Org/AI-Horde/blob/main/FAQ.md#can-you-explain-how-the-anti-csam-regex-filter-works"
         ),
     )
 

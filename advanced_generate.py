@@ -25,7 +25,7 @@ from .ai_horde.models.image import (
     TextualInversion,
     TIPlacement,
 )
-from .helpers import APIPackage, fetch_image, report_error, resize_to_match_area, LongLastingView
+from .helpers import APIPackage, LongLastingView, fetch_image, report_error, resize_to_match_area
 
 
 def strip_codeblock(string: str, /) -> str:
@@ -410,7 +410,6 @@ class GenerationSettingsView(LongLastingView):
         apis: APIPackage,
         default_request: ImageGenerationRequest,
         author_id: int,
-        **kwargs,
     ) -> None:
         super().__init__()
         self.author_id = author_id
@@ -716,7 +715,6 @@ class LoRAPickerView(LongLastingView):
         author_id: int,
         default_loras: list[LoRA] | None,
         default_tis: list[TextualInversion] | None,
-        **kwargs,
     ) -> None:
         super().__init__()
         self.author_id = author_id
@@ -830,7 +828,6 @@ class SourceImageView(LongLastingView):
         apis: APIPackage,
         author_id: int,
         generation_request: ImageGenerationRequest,
-        **kwargs,
     ) -> None:
         super().__init__()
         self.author_id = author_id
@@ -1285,7 +1282,7 @@ class DeleteOrRetryView(AttachmentDeletionView):
             generation_request=self.generation_params,
             apis=self.apis,
             reply_to=interaction.message,
-            edit=any(generation.censored for generation in self.finished_generation_status.generations)
+            edit=any(generation.censored for generation in self.finished_generation_status.generations),
         )
 
     @discord.ui.button(
@@ -1391,6 +1388,6 @@ async def process_generation(
             required_votes=2,
             generation_params=generation_request,
             finished_generation_status=generation_status,
-            apis=apis
+            apis=apis,
         ),
     )
