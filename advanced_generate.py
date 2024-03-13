@@ -525,6 +525,12 @@ class GenerationSettingsView(LongLastingView):
         await interaction.response.defer()
         await process_generation(interaction, self.generation_request, apis=self.apis, reply_to=interaction.message)
 
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.red, row=4, emoji="\N{HEAVY MULTIPLICATION X}")
+    async def cancel(self, interaction: discord.Interaction, _):
+        await interaction.message.delete()
+        await interaction.response.defer()
+        self.stop()
+
     @discord.ui.button(label="Get JSON", style=discord.ButtonStyle.grey, row=4, emoji="\N{INBOX TRAY}")
     async def get_json(self, interaction: discord.Interaction, _):
         json = self.generation_request.model_dump_json(indent=4)
