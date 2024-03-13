@@ -378,7 +378,7 @@ class CivitAIModelVersion(HordeModel):
     base_model: str = RenamedField(
         renamed_to="base_model", original_name="baseModel",
     )
-    base_model_type: BaseModelType | None = RenamedField(
+    base_model_type: BaseModelType | str | None = RenamedField(
         default=None,
         renamed_to="base_model_type", original_name="baseModelType",
     )
@@ -410,7 +410,7 @@ class CivitAIModel(HordeSuccess):
         default=None,
         description="The model description as HTML.",
     )
-    type: ModelType = Field(
+    type: ModelType | str = Field(
         description="The model type.",
     )
     nsfw: bool = Field(
