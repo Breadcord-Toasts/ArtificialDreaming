@@ -381,7 +381,7 @@ class AdvancedOptionsModal(discord.ui.Modal, title="More generation options"):
         if (key := self.sampler.value.strip().upper()) in Sampler.__members__:
             sampler = Sampler[key]
         else:
-            sampler = self.sampler.value.strip()
+            sampler = self.sampler.value.strip() or None
         self.current_request.params.sampler = sampler
 
         await defer_and_edit(interaction, self.current_request, self.apis)
@@ -1325,7 +1325,9 @@ async def process_generation(
             )
             return await interaction.followup.send(embed=embed, ephemeral=True)
 
-        return await report_error(interaction, error)
+        await report_error(interaction, error)
+        apis.logger.exception("Failed to queue image generation")
+        return
 
     requested_images = generation_request.params.image_count or 1
     generic_wait_message = (

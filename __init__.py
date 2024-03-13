@@ -318,6 +318,7 @@ class ArtificialDreaming(
                 )
         except HordeRequestError as error:
             await report_error(ctx, error)
+            self.logger.exception("Error occurred while generating image.")
             return
 
         await response.edit(
@@ -338,6 +339,7 @@ class ArtificialDreaming(
             result: CaptionResult = finished_interrogation.forms[0].result
         except HordeRequestError as error:
             await report_error(ctx, error)
+            self.logger.exception("Error occurred while interrogating image.")
         else:
             await response.edit(content=result.caption)
 
@@ -373,6 +375,7 @@ class ArtificialDreaming(
             )
         except HordeRequestError as error:
             await report_error(ctx, error)
+            self.logger.exception("Error occurred while generating image.")
 
     @commands.hybrid_command(description="Get info about a model from CivitAI.")
     @app_commands.describe(model_id="The ID as shown in the CivitAI URL.")

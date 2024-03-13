@@ -47,7 +47,10 @@ async def report_error(
     )
 
     if isinstance(context, discord.Interaction):
-        await context.response.send_message(embed=embed, ephemeral=True)
+        try:
+            await context.response.send_message(embed=embed, ephemeral=True)
+        except discord.InteractionResponded:
+            await context.followup.send(embed=embed, ephemeral=True)
         return
     elif isinstance(context, (commands.Context, discord.Message)):
         await context.reply(embed=embed)
