@@ -152,7 +152,8 @@ class CivitAIImage(HordeSuccess):
     hash: str = Field(
         description="The image's hash.",
     )
-    metadata: CivitAIImageMetadata = Field(
+    metadata: CivitAIImageMetadata | None = Field(
+        default=None,
         description="The image's metadata, such as its hash and size.",
     )
     meta: CivitAIImageMeta | None = Field(
