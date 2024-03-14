@@ -328,7 +328,8 @@ class CivitAIModelVersion(HordeModel):
     id: int = Field(
         description="The model version's identifier.",
     )
-    model_id: int = RenamedField(
+    model_id: int | None = RenamedField(
+        default=None,
         description="The model version's model identifier.",
         renamed_to="model_id", original_name="modelId",
     )
