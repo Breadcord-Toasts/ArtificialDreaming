@@ -103,9 +103,9 @@ class HordeAPI:
         start_time = time.time()
         images_done = 0
         while True:
-            check = await self.get_image_generation_status(queued_generation.id)
+            check = await self.get_image_generation_check(queued_generation.id)
             if check.finished > images_done:
-                status = await self.get_image_generation_status(queued_generation.id, full=True)
+                status = await self.get_image_generation_status(queued_generation.id)
                 yield status.generations
             images_done = check.finished
             if check.done or time.time() - start_time > 60 * 10:
@@ -121,16 +121,23 @@ class HordeAPI:
         self.logger.debug(f"Image generation queued: {queued_generation.id}")
         return queued_generation
 
-    async def get_image_generation_status(
-        self, generation_id: str, *, full: bool = False,
-    ) -> ImageGenerationStatus | GenerationCheck:
+    async def get_image_generation_status(self, generation_id: str) -> ImageGenerationStatus:
         """Get the status of an image generation. A "full" request will contain generated images."""
         json = await json_request(
             self.session,
             HTTPMethod.GET,
-            url=HORDE_API_BASE / "v2/generate/" / ("status" if full else "check") / generation_id,
+            url=HORDE_API_BASE / "v2/generate/status" / generation_id
         )
-        return ImageGenerationStatus.model_validate(json) if full else GenerationCheck.model_validate(json)
+        return ImageGenerationStatus.model_validate(json)
+
+    async def get_image_generation_check(self, generation_id: str) -> GenerationCheck:
+        """Get the status of an image generation. A "full" request will contain generated images."""
+        json = await json_request(
+            self.session,
+            HTTPMethod.GET,
+            url=HORDE_API_BASE / "v2/generate/check" / generation_id,
+        )
+        return GenerationCheck.model_validate(json)
 
     async def cancel_image_generation(self, generation_id: str) -> None:
         await json_request(self.session, HTTPMethod.DELETE, HORDE_API_BASE / "v2/generate/status" / generation_id)
@@ -484,5 +491,3 @@ async def _concurrent_page_items_fetch(
         limit=max_concurrent,
     )
     return itertools.chain.from_iterable(results)
-
-
