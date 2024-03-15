@@ -160,7 +160,7 @@ class CivitAIImage(HordeSuccess):
         default=None,
         description="Meta info about the image, like generation parameters.",
     )
-    type: Literal["image", "video"] | None
+    type: Literal["image", "video"] | str | None
 
     # noinspection PyNestedDecorators
     @field_validator("nsfw", mode="before")
@@ -175,7 +175,8 @@ class CivitAICreator(HordeSuccess):
     # Removes a warning about field names starting with "model_" being reserved
     model_config = ConfigDict(protected_namespaces=())
 
-    username: str = Field(
+    username: str | None = Field(
+        default=None,
         description="The creator's username. This acts as a unique identifier.",
     )
     image_url: str | None = RenamedField(
@@ -340,11 +341,13 @@ class CivitAIModelVersion(HordeModel):
         default=None,
         description="The model version's description as HTML. Usually a changelog.",
     )
-    created_at: datetime.datetime = RenamedField(
+    created_at: datetime.datetime | None = RenamedField(
+        default=None,
         description="The model version's creation date.",
         renamed_to="created_at", original_name="createdAt",
     )
-    updated_at: datetime.datetime = RenamedField(
+    updated_at: datetime.datetime | None = RenamedField(
+        default=None,
         description="The model version's last update date.",
         renamed_to="updated_at", original_name="updatedAt",
     )
@@ -353,7 +356,8 @@ class CivitAIModelVersion(HordeModel):
         description="The model version's publication date.",
         renamed_to="published_at", original_name="publishedAt",
     )
-    download_url: str = RenamedField(
+    download_url: str | None = RenamedField(
+        default=None,
         description="The model version's download URL.",
         renamed_to="download_url", original_name="downloadUrl",
     )
@@ -365,7 +369,8 @@ class CivitAIModelVersion(HordeModel):
     images: list[CivitAIImage]
     # TODO: Are there any other states this can be in? There shouldn't be, right?
     #  Will be hard to test since only published models should be on the homepage, so might not be a real issue
-    status: Literal["Published"] = Field(
+    status: Literal["Published"] | None = Field(
+        default=None,
         description="The model version's publication status.",
     )
     stats: CivitAIModelStats
@@ -430,7 +435,8 @@ class CivitAIModel(HordeSuccess):
         ),
         renamed_to="state", original_name="mode",
     )
-    creator: CivitAICreator = Field(
+    creator: CivitAICreator | None = Field(
+        default=None,
         description="The model's creator.",
     )
     versions: list[CivitAIModelVersion] = RenamedField(

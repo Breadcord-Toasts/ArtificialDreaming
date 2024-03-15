@@ -1,11 +1,12 @@
 import asyncio
+import itertools
 import time
 from collections.abc import AsyncGenerator
 from enum import Enum
 from http import HTTPMethod
 from json import loads as json_loads
 from logging import Logger
-from typing import Any, Self
+from typing import Any, Self, Coroutine, TypeVar, overload
 from urllib.parse import parse_qsl, quote, urlencode, urlparse
 
 import aiohttp
@@ -24,6 +25,9 @@ from .models.image import (
     InterrogationStatusState,
 )
 from .models.text import FinishedTextGeneration, TextGenerationRequest, TextGenerationStatus
+
+_T = TypeVar("_T")
+_M = TypeVar("_M", bound=BaseModel)
 
 
 class URL(str):
@@ -48,7 +52,7 @@ class URL(str):
     def clear_params(self) -> Self:
         return self.__class__(urlparse(self)._replace(query="").geturl())
 
-    def set_params(self, **params: Any) -> Self:
+    def with_params(self, **params: Any) -> Self:
         url = urlparse(self)
         query_params = dict(parse_qsl(url.query))
         query_params.update(params)
@@ -281,8 +285,7 @@ class CivitAIAPI:
     ) -> list[CivitAIModel]:
         url = CIVITAI_API_DOMAIN / "v1/models"
         if type is not None:
-            url = url.set_params(types=type.value)
-
+            url = url.with_params(types=type.value)
         models = []
         async for model in self._fetch_paginated_json_list(url, pages=pages):
             models.append(CivitAIModel.model_validate(model))
@@ -397,3 +400,89 @@ async def json_request(
             response_headers=dict(response.headers),
         )
     return await response.json()
+
+
+async def gather_with_max_concurrent(
+    *coros_or_futures: asyncio.Future[_T] | Coroutine[None, None, _T],
+    limit: int,
+    return_exceptions: bool = False
+) -> list[_T | Exception]:
+    """Operates like asyncio.gather() but never runs more than `limit` of the given coroutines at once."""
+    pending = list(coros_or_futures)
+    running = []
+    results = []
+    while pending or running:
+        while len(running) < limit and pending:
+            running.append(asyncio.ensure_future(pending.pop(0)))
+        done, running = await asyncio.wait(running, return_when=asyncio.FIRST_COMPLETED)
+        for task in done:
+            try:
+                task.result()
+            except Exception as error:
+                if return_exceptions:
+                    results.append(error)
+                else:
+                    raise error
+        running = [task for task in running if not task.done()]
+    return results
+
+
+@overload
+async def _concurrent_page_items_fetch(
+    self,
+    url: URL,
+    increment_param: str = "page",
+    *,
+    logger: Logger,
+    pages: int = 1,
+    start_at: int = 1,
+    max_concurrent: int = 5,
+) -> list[JsonLike]:
+    ...
+
+
+@overload
+async def _concurrent_page_items_fetch(
+    self,
+    url: URL,
+    increment_param: str = "page",
+    *,
+    logger: Logger,
+    model: type[_M],
+    pages: int = 1,
+    start_at: int = 1,
+    max_concurrent: int = 5,
+) -> list[_M]:
+    ...
+
+
+async def _concurrent_page_items_fetch(
+    self,
+    url: URL,
+    increment_param: str = "page",
+    *,
+    logger: Logger,
+    model: type[_M] | None = None,
+    pages: int = 1,
+    start_at: int = 1,
+    max_concurrent: int = 5,
+) -> list[JsonLike | _M]:
+    """Fetch items from a paginated API endpoint with a maximum number of concurrent requests."""
+    async def fetch_page_items(page_url: str) -> JsonLike:
+        result = await json_request(self.session, HTTPMethod.GET, page_url)
+        logger.debug(f"Fetched page {page_url}")
+        items = result.get("items", [])
+        if model:
+            return [model.model_validate(item) for item in items]
+        return items
+
+    results = await gather_with_max_concurrent(
+        *(
+            fetch_page_items(url.with_params(**{increment_param: index}))
+            for index in range(start_at, start_at + pages)
+        ),
+        limit=max_concurrent,
+    )
+    return itertools.chain.from_iterable(results)
+
+
