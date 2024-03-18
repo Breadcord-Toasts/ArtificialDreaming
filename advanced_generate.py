@@ -13,7 +13,7 @@ from pydantic import ValidationError
 
 from .ai_horde.models.civitai import CivitAIModel, CivitAIModelVersion, ModelType
 from .ai_horde.models.general import HordeRequestError
-from .ai_horde.models.horde_meta import ActiveModel
+from .ai_horde.models.horde_meta import ActiveModel, GenerationResponse
 from .ai_horde.models.image import (
     Base64Image,
     ControlType,
@@ -1292,7 +1292,7 @@ class DeleteOrRetryView(AttachmentDeletionView):
         )
 
     @discord.ui.button(
-        label="Retry and edit", style=discord.ButtonStyle.blurple,
+        label="Edit", style=discord.ButtonStyle.blurple,
         emoji="\N{CLOCKWISE RIGHTWARDS AND LEFTWARDS OPEN CIRCLE ARROWS}",
     )
     async def retry_and_edit(self, interaction: discord.Interaction, _):
@@ -1305,6 +1305,24 @@ class DeleteOrRetryView(AttachmentDeletionView):
             ),
             embeds=await get_settings_embeds(self.generation_params, self.apis),
         )
+
+
+class CancelGenerationView(discord.ui.View):
+    def __init__(self, author_id: int, apis: APIPackage, generation: GenerationResponse) -> None:
+        super().__init__()
+        self.author_id = author_id
+        self.apis = apis
+        self.generation = generation
+
+    async def interaction_check(self, interaction: Interaction, /) -> bool:
+        return interaction.user.id == self.author_id
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.red)
+    async def cancel_generation(self, interaction: discord.Interaction, _):
+        await interaction.response.defer()
+        await self.apis.horde.cancel_image_generation(generation_id=self.generation.id)
+        await interaction.message.delete()
+        self.stop()
 
 
 async def process_generation(
@@ -1345,11 +1363,17 @@ async def process_generation(
         description=generic_wait_message,
         colour=discord.Colour.blurple(),
     ).set_footer(text=f"Using {'anonymous' if is_anon else 'logged in'} account.")
+
+    view = CancelGenerationView(
+        author_id=interaction.user.id,
+        apis=apis,
+        generation=queued_generation,
+    )
     if edit:
-        await reply_to.edit(embed=embed, attachments=[])
+        await reply_to.edit(embed=embed, attachments=[], view=view)
         message = reply_to
     else:
-        message = await reply_to.reply(embed=embed)
+        message = await reply_to.reply(embed=embed, view=view)
 
     await asyncio.sleep(5)
 
