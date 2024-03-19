@@ -12,7 +12,7 @@ from urllib.parse import parse_qsl, quote, urlencode, urlparse
 import aiohttp
 from pydantic import BaseModel
 
-from .models.civitai import CivitAIModel, CivitAIModelVersion, ModelType, SearchCategory, SearchFilter
+from .models.civitai import CivitAIModel, CivitAIModelVersion, ModelType, SearchCategory, SearchFilter, SortOptions
 from .models.general import HordeRequest, HordeRequestError, SimpleTimedCache
 from .models.horde_meta import ActiveModel, GenerationCheck, GenerationResponse, HordeNews, HordeUser, Team, Worker
 from .models.image import (
@@ -317,6 +317,7 @@ class CivitAIAPI:
         category: SearchCategory | str,
         *,
         filters: SearchFilter | None = None,
+        sort: SortOptions | None = None,
         limit: int = 20,
     ) -> list[CivitAIModel]:
         """Warning!
@@ -340,7 +341,9 @@ class CivitAIAPI:
                         "indexUid": category.value if isinstance(category, Enum) else category,
                         "limit": limit,
                         "offset": 0,
-                    } | ({"filter": filters.serialize} if filters else {}),
+                    }
+                    | ({"filter": filters.serialize} if filters else {})
+                    | ({"sort": [sort]} if sort else {}),
                 ],
             },
         )

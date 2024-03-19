@@ -12,7 +12,7 @@ import breadcord
 from .advanced_generate import GenerationSettingsView, get_settings_embeds
 from .ai_horde.cache import Cache
 from .ai_horde.interface import CivitAIAPI, HordeAPI, SearchCategory
-from .ai_horde.models.civitai import CivitAIModel, CivitAIModelVersion, ModelType, SearchFilter
+from .ai_horde.models.civitai import CivitAIModel, CivitAIModelVersion, ModelType, SearchFilter, SortOptions
 from .ai_horde.models.general import HordeRequestError
 from .ai_horde.models.horde_meta import HordeNews
 from .ai_horde.models.image import (
@@ -462,6 +462,7 @@ class ArtificialDreaming(
                 SearchCategory.MODELS,
                 filters=SearchFilter().model_type(ModelType.LORA),
                 limit=5,
+                sort=SortOptions.DOWNLOADS,
             )
         view = ModelBrowserEmbed(models)
         await ctx.reply(embed=await view.get_embed(), view=view)

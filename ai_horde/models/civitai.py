@@ -361,7 +361,8 @@ class CivitAIModelVersion(HordeModel):
         description="The model version's download URL.",
         renamed_to="download_url", original_name="downloadUrl",
     )
-    trained_words: list[str] = RenamedField(
+    trained_words: list[str] | None = RenamedField(
+        default=None,
         description="The words used to trigger the model.",
         renamed_to="trained_words", original_name="trainedWords",
     )
@@ -491,6 +492,16 @@ class SearchCategory(StrEnum):
     ARTICLES = "articles_v3"
     BOUNTIES = "bounties"
     COLLECTIONS = "collections"
+
+
+class SortOptions(StrEnum):
+    RATING = "metrics.thumbsUpCount:desc"
+    BUZZ = "metrics.tippedAmountCount:desc"
+    CREATED_AT = "createdAt:desc"
+    DOWNLOADS = "metrics.downloadCount:desc"
+    FAVORITES = "metrics.favoriteCount:desc"
+    COMMENTS = "metrics.commentCount:desc"
+    COLLECTED = "metrics.collectedCount:desc"
 
 
 class SearchFilter:
