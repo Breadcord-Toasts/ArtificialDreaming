@@ -386,6 +386,7 @@ class ArtificialDreaming(
         *, query: str | None = None,
         sorting: SortOptions | None = None,
         model_type: ModelType | None = None,
+        show_nsfw: bool = False,
     ) -> None:
         if ctx.interaction:
             await ctx.defer()
@@ -410,6 +411,9 @@ class ArtificialDreaming(
         if not models:
             await ctx.reply("No models found.", ephemeral=True)
             return
+
+        if not show_nsfw:
+            models = [model for model in models if not model.nsfw]
 
         view = CivitAIModelBrowserView(models, cache=self.cache)
         await ctx.reply(**(await view.get_page()).unpack(), view=view)
