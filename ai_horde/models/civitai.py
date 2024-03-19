@@ -367,7 +367,10 @@ class CivitAIModelVersion(HordeModel):
         renamed_to="trained_words", original_name="trainedWords",
     )
     files: list[CivitAIModelFile]
-    images: list[CivitAIImage]
+    images: list[CivitAIImage] | None = Field(
+        default=None,
+        description="The model version's images.",
+    )
     # TODO: Are there any other states this can be in? There shouldn't be, right?
     #  Will be hard to test since only published models should be on the homepage, so might not be a real issue
     status: Literal["Published"] | None = Field(
@@ -509,7 +512,7 @@ class SearchFilter:
         self._filters: dict[str, list[str]] = defaultdict(list)
 
     @property
-    def serialize(self) -> list[list[str]]:
+    def serialized(self) -> list[list[str]]:
         return [
             [f'"{key}"="{value}"' for value in values]
             for key, values in self._filters.items()
@@ -519,6 +522,6 @@ class SearchFilter:
         self._filters["type"].append(model_type)
         return self
 
-    def base_model_type(self, base_model: str, /) -> "SearchFilter":
+    def base_model(self, base_model: str, /) -> "SearchFilter":
         self._filters["version.baseModel"].append(base_model)
         return self

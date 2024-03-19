@@ -1351,7 +1351,7 @@ async def process_generation(
 
         await report_error(interaction, error)
         apis.logger.exception("Failed to queue image generation")
-        return
+        return None
 
     requested_images = generation_request.params.image_count or 1
     generic_wait_message = (

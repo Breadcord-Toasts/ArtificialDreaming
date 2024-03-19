@@ -1,3 +1,4 @@
+import contextlib
 import random
 import sqlite3
 
@@ -30,6 +31,7 @@ from .ai_horde.models.image import (
 )
 from .ai_horde.models.other_sources import Style
 from .ai_horde.models.text import TextGenerationRequest
+from .civitai_browser import CivitAIModelBrowserView
 from .helpers import APIPackage, LongLastingView, fetch_image, report_error
 from .login import LoginButtonView
 
@@ -377,169 +379,40 @@ class ArtificialDreaming(
             await report_error(ctx, error)
             self.logger.exception("Error occurred while generating image.")
 
-    @commands.hybrid_command(description="Get info about a model from CivitAI.")
-    @app_commands.describe(model_id="The ID as shown in the CivitAI URL.")
-    async def civitai_model(self, ctx: commands.Context, model_id: int) -> None:
-        # TODO: Integrate with horde model reference?
-        model: CivitAIModel | None = None
-        version: CivitAIModelVersion | NoneWithProperties = NoneWithProperties()
-        try:
-            model = await self.civitai.get_model(model_id)
-        except HordeRequestError:
-            version = await self.civitai.get_model_version(model_id)
-            if version is not None:
-                model = await self.civitai.get_model(version.model_id)
-        finally:
-            if model is None:
-                await ctx.reply("Model not found.", ephemeral=True)
-                return
-
-        def hacky_camel_case_split(string: str) -> str:
-            if len(string) < 8:  # VERY hacky, but oh well
-                return string
-            out = ""
-            for i in range(len(string)):
-                char = string[i]
-                out += char
-                next_char = string[nxt] if (nxt := i+1) < len(string) else ""
-                if char.islower() and next_char.isupper():
-                    out += " "
-            return out
-
-        embed = discord.Embed(
-            title=version.name or model.name,
-            url=version.url or model.url,
-            colour=discord.Colour.random(seed=model.id),
-            description="\n".join(s for s in (
-                f"Version of [{model.name}]({model.url})" if version else "",
-                f"**Model type:** {hacky_camel_case_split(model.type)}",
-                f"**NSFW:** {model.nsfw}" if model.nsfw else "",
-            ) if s),
-        )
-        embed.set_image(url=version.sfw_thumbnail_url or model.sfw_thumbnail_url)
-        embed.set_author(
-            name=model.creator.username,
-            icon_url=model.creator.image_url,
-        )
-        footer = f"Model ID: {model.id}"
-        if version:
-            footer += f" | Version ID: {version.id}"
-        embed.set_footer(text=footer)
-        embed.add_field(
-            name=((stats := model.stats) and False) or "Stats",
-            value="\n".join(s for s in (
-                f"**Downloads:** {stats.download_count:,}",
-                f"**Rating:** {stats.rating} ({stats.ratingCount:,} ratings)" if stats.rating is not None else "",
-            ) if s),
-            inline=False,
-        )
-        file = (version or model.versions[0]).files[0]
-        if file.size_kb > 1024 ** 2:
-            appropriate_filesize = f"{file.size_kb / (1024 * 1024):.2f} GB"
-        elif file.size_kb > 1024:
-            appropriate_filesize = f"{file.size_kb / 1024:.2f} MB"
-        else:
-            appropriate_filesize = f"{file.size_kb:.2f} KB"
-        embed.add_field(
-            name="File",
-            value="\n".join(s for s in (
-                f"[{file.name}]({file.download_url})",
-                f"**Size:** {appropriate_filesize}",
-                f"**Type:** {hacky_camel_case_split(file.type)}",
-            ) if s),
-            inline=False,
-        )
-
-        await ctx.reply(embed=embed)
-
     @commands.hybrid_command()
-    async def lora_search(self, ctx: commands.Context, query: str | None = None) -> None:
-        if query is None:
-            models = await self.civitai.get_models(type=ModelType.LORA)
-        else:
-            models = await self.civitai.search(
-                query,
-                SearchCategory.MODELS,
-                filters=SearchFilter().model_type(ModelType.LORA),
-                limit=5,
-                sort=SortOptions.DOWNLOADS,
-            )
-        view = ModelBrowserEmbed(models)
-        await ctx.reply(embed=await view.get_embed(), view=view)
+    async def civitai_search(
+        self,
+        ctx: commands.Context,
+        *, query: str | None = None,
+        sorting: SortOptions | None = None,
+        model_type: ModelType | None = None,
+    ) -> None:
+        if ctx.interaction:
+            await ctx.defer()
 
-    @commands.hybrid_command()
-    async def ti_search(self, ctx: commands.Context, query: str | None = None) -> None:
-        if query is None:
-            models = await self.civitai.get_models(type=ModelType.TEXTUALINVERSION)
-        else:
-            models = await self.civitai.search(
-                query,
-                SearchCategory.MODELS,
-                filters=SearchFilter().model_type(ModelType.TEXTUALINVERSION),
-                limit=5,
-            )
-        view = ModelBrowserEmbed(models)
-        await ctx.reply(embed=await view.get_embed(), view=view)
+        models: list[CivitAIModel] | None = None
+        if not query:
+            models = await self.civitai.get_models(type=model_type)
+        if not models:
+            with contextlib.suppress(HordeRequestError):
+                model = await self.civitai.get_model(query)
+                models = [model] if model and (model_type is None or model.type == model_type) else None
+        if not models:
+            with contextlib.suppress(HordeRequestError):
+                models = await self.civitai.search(
+                    query,
+                    SearchCategory.MODELS,
+                    filters=SearchFilter().model_type(model_type) if model_type else None,
+                    sort=sorting,
+                    limit=10,
+                )
 
+        if not models:
+            await ctx.reply("No models found.", ephemeral=True)
+            return
 
-class ModelBrowserEmbed(LongLastingView):
-    def __init__(self, models: list[CivitAIModel]) -> None:
-        super().__init__()
-        self.models = models
-        self.index = 0
-
-    @discord.ui.button(
-        label="Previous", style=discord.ButtonStyle.grey, emoji="\N{BLACK LEFT-POINTING TRIANGLE}", disabled=True,
-    )
-    async def previous_page(self, interaction: discord.Interaction, _) -> None:
-        self.index -= 1
-        self.update_buttons()
-        await interaction.response.edit_message(embed=await self.get_embed(), view=self)
-
-    @discord.ui.button(
-        label="Next", style=discord.ButtonStyle.grey, emoji="\N{BLACK RIGHT-POINTING TRIANGLE}",
-    )
-    async def next_page(self, interaction: discord.Interaction, _) -> None:
-        self.index += 1
-        self.update_buttons()
-        await interaction.response.edit_message(embed=await self.get_embed(), view=self)
-
-    def update_buttons(self) -> None:
-        self.previous_page.disabled = self.index <= 0
-        self.next_page.disabled = self.index >= len(self.models)-1
-
-    async def get_embed(self) -> discord.Embed:
-        model = self.models[self.index]
-
-        description = "\n".join((
-            f"**Model type:** {model.type}",
-            f"**Tags:** {', '.join(model.tags[:7])}",
-            f"**NSFW:** {model.nsfw}",
-        ))
-        embed = discord.Embed(
-            title=model.name,
-            description=description,
-            url=model.url,
-            colour=discord.Colour.random(seed=model.id),
-        )
-        embed.set_image(url=next((image.url for image in model.versions[0].images if not image.nsfw), None))
-        embed.set_footer(text=f"Model {self.index+1}/{len(self.models)}")
-
-        if len(model.versions) > 1:
-            versions_text = ""
-            for i, version in enumerate(model.versions):
-                text = f"[{version.name}]({version.url})"
-                if len(text) + len(versions_text) > 1024 or i > 6:
-                    if i+1 < len(model.versions):
-                        versions_text += f" and {len(model.versions) - i} more"
-                    break
-                versions_text += text + ", "
-            embed.add_field(
-                name="Versions",
-                value=versions_text,
-            )
-
-        return embed
+        view = CivitAIModelBrowserView(models, cache=self.cache)
+        await ctx.reply(**(await view.get_page()).unpack(), view=view)
 
 
 async def setup(bot: breadcord.Bot):

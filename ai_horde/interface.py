@@ -6,7 +6,7 @@ from enum import Enum
 from http import HTTPMethod
 from json import loads as json_loads
 from logging import Logger
-from typing import Any, Self, Coroutine, TypeVar, overload
+from typing import Any, Coroutine, Self, TypeVar, overload
 from urllib.parse import parse_qsl, quote, urlencode, urlparse
 
 import aiohttp
@@ -126,7 +126,7 @@ class HordeAPI:
         json = await json_request(
             self.session,
             HTTPMethod.GET,
-            url=HORDE_API_BASE / "v2/generate/status" / generation_id
+            url=HORDE_API_BASE / "v2/generate/status" / generation_id,
         )
         return ImageGenerationStatus.model_validate(json)
 
@@ -342,7 +342,7 @@ class CivitAIAPI:
                         "limit": limit,
                         "offset": 0,
                     }
-                    | ({"filter": filters.serialize} if filters else {})
+                    | ({"filter": filters.serialized} if filters else {})
                     | ({"sort": [sort]} if sort else {}),
                 ],
             },
@@ -415,7 +415,7 @@ async def json_request(
 async def gather_with_max_concurrent(
     *coros_or_futures: asyncio.Future[_T] | Coroutine[None, None, _T],
     limit: int,
-    return_exceptions: bool = False
+    return_exceptions: bool = False,
 ) -> list[_T | Exception]:
     """Operates like asyncio.gather() but never runs more than `limit` of the given coroutines at once."""
     pending = list(coros_or_futures)
