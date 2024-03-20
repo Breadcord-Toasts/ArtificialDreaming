@@ -82,7 +82,7 @@ class CivitAIModelBrowserView(PaginatedView):
     MAX_VERSIONS = 5
     MAX_VERSIONS_CHARS = 500
     MAX_TAGS = 8
-    MAX_TAGS_CHARS = 60
+    MAX_TAGS_CHARS = 100
 
     def __init__(self, models: list[CivitAIModel], *, starting_index: int = 0, cache: Cache) -> None:
         super().__init__(data=models, starting_index=starting_index)
