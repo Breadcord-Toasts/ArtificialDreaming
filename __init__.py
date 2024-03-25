@@ -19,6 +19,7 @@ from .ai_horde.models.horde_meta import HordeNews
 from .ai_horde.models.image import (
     Base64Image,
     CaptionResult,
+    ExtraSourceImage,
     GenericProcessedImageResult,
     ImageGenerationParams,
     ImageGenerationRequest,
@@ -27,6 +28,7 @@ from .ai_horde.models.image import (
     InterrogationType,
     LoRA,
     Sampler,
+    SourceProcessing,
     TextualInversion,
 )
 from .ai_horde.models.other_sources import Style
@@ -329,21 +331,6 @@ class ArtificialDreaming(
                 + (f"Style: {chosen_style.name}" if chosen_style is not None else "")
             ),
         )
-
-    @commands.hybrid_command()
-    async def describe(self, ctx: commands.Context, image_url: str) -> None:
-        response = await ctx.reply("Requesting interrogation... Please wait.")
-        try:
-            finished_interrogation = await self.horde_for(ctx.author).interrogate(InterrogationRequest(
-                image_url=image_url,
-                forms=[InterrogationRequestForm(name=InterrogationType.CAPTION)],
-            ))
-            result: CaptionResult = finished_interrogation.forms[0].result
-        except HordeRequestError as error:
-            await report_error(ctx, error)
-            self.logger.exception("Error occurred while interrogating image.")
-        else:
-            await response.edit(content=result.caption)
 
     @commands.hybrid_command()
     async def advanced_generate(

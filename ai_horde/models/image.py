@@ -73,6 +73,7 @@ class SourceProcessing(StrEnum):
     IMG2IMG = "img2img"
     INPAINTING = "inpainting"
     OUTPAINTING = "outpainting"
+    REMIX = "remix"
 
 
 # noinspection SpellCheckingInspection
@@ -188,6 +189,17 @@ class TextualInversion(HordeModel):
             #  What was past me *thinking*?
             values["name"] = str(values.pop("id"))
         return values
+
+
+class ExtraSourceImage(HordeModel):
+    image: Base64Image | str = Field(
+        description="The source image.",
+    )
+    strength: float | None = Field(
+        default=None,
+        description="The strength with which to apply the image to the image generation model.",
+        ge=-5, le=5,
+    )
 
 
 class ImageGenerationParams(HordeModel):
@@ -362,7 +374,7 @@ class ImageGenerationRequest(HordeRequest):
     replacement_filter: bool | None = Field(
         default=None,
         description=(
-            "If true, prompts found to be susoicious (CSAM) "
+            "If true, prompts found to be suspicious (CSAM) "
             "will have their suspicious parts replaced with safer alternatives. "
             "If false, the request will be blocked and the user's IP will get a timeout. "
             # "This setting is ignored and treated as false if the prompt exceeds 1000 characters."
@@ -379,7 +391,7 @@ class ImageGenerationRequest(HordeRequest):
         ),
     )
 
-    source_image: Base64Image | None = Field(
+    source_image: Base64Image | str | None = Field(
         default=None,
         description="A base64 encoded WEBP image to use for img2img.",
     )
@@ -401,6 +413,13 @@ class ImageGenerationRequest(HordeRequest):
             # "The mask should be a grayscale image where white represents the area to inpaint/outpaint "
             # "and black represents the area to keep. "
         ),
+    )
+    extra_source_images: conlist(ExtraSourceImage, max_length=5) | None = Field(
+        default=None,
+        description=(
+            "A list of extra images to use for stable cascade remixing. "
+            'source_processing must be set to "remix"'
+        ),  # TODO: Expand upon explanation
     )
 
     workers: conlist(str, max_length=5) | None = Field(

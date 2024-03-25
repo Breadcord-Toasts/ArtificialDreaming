@@ -5,6 +5,7 @@ import math
 import re
 import textwrap
 import time
+from collections.abc import Generator
 from typing import Any, TypedDict
 
 import discord
@@ -811,6 +812,18 @@ class SourceImageParams(TypedDict):
 
 # noinspection PyUnusedLocal
 async def get_source_image_params(generation_request: ImageGenerationRequest, apis: APIPackage) -> SourceImageParams:
+    attachments = []
+    if generation_request.source_image:
+        attachments.append(discord.File(
+            generation_request.source_image.to_bytesio(),
+            filename="source_image.webp",
+        ))
+    for i, extra_source_image in enumerate(generation_request.extra_source_images or []):
+        attachments.append(discord.File(
+            extra_source_image.to_bytesio(),
+            filename=f"extra_source_image_{i}.webp",
+        ))
+
     return SourceImageParams(
         embed=discord.Embed(
             title="Source image",
@@ -821,10 +834,7 @@ async def get_source_image_params(generation_request: ImageGenerationRequest, ap
         ).set_image(
             url="attachment://source_image.webp",
         ),
-        attachments=[discord.File(
-            generation_request.source_image.to_bytesio(),
-            filename="source_image.webp",
-        )] if generation_request.source_image else [],
+        attachments=attachments,
     )
 
 
@@ -841,6 +851,7 @@ class SourceImageView(LongLastingView):
         self.generation_request = generation_request
         # Update buttons to reflect current state
         self.source_image = self.source_image
+        self.extra_source_images = self.extra_source_images
 
         # TODO: If set to none when image_is_control is set, we need to change the button to its off state
         self.control_type_select = ControlTypeSelect(generation_request)
@@ -854,29 +865,56 @@ class SourceImageView(LongLastingView):
     def source_image(self, value: Base64Image | None) -> None:
         self.generation_request.source_image = value
         if value is None:
-            self.add_image.label = "Add image"
             if self.delete_image in self.children:
                 self.remove_item(self.delete_image)
+        elif self.delete_image not in self.children:
+            self.add_item(self.delete_image)
+
+    @property
+    def extra_source_images(self) -> list[Base64Image]:
+        return self.generation_request.extra_source_images
+
+    @extra_source_images.setter
+    def extra_source_images(self, value: list[Base64Image]) -> None:
+        self.generation_request.extra_source_images = value
+        if not value:
+            if self.reset_extra_images in self.children:
+                self.remove_item(self.reset_extra_images)
+            if self.delete_last_extra_image in self.children:
+                self.remove_item(self.delete_last_extra_image)
         else:
-            self.add_image.label = "Change image"
-            if self.delete_image not in self.children:
-                self.add_item(self.delete_image)
+            if self.reset_extra_images not in self.children:
+                self.add_item(self.reset_extra_images)
+            if self.delete_last_extra_image not in self.children:
+                self.add_item(self.delete_last_extra_image)
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         return interaction.user.id == self.author_id
 
-    @discord.ui.button(label="Add image", style=discord.ButtonStyle.green, row=0)
-    async def add_image(self, interaction: discord.Interaction, _):
-        await interaction.response.defer()
+    async def ask_for_images(
+        self, interaction: discord.Interaction, max_images: int | None = None, timeout: int = 15,
+    ) -> list[Base64Image]:
+        for button in self.children:
+            if button in [self.cancel]:
+                continue
+            button.disabled = True
 
-        timeout = 15
-        await interaction.message.edit(
-            embed=discord.Embed(
-                title="Awaiting image...",
-                description="Reply to this message with an image url or attachment",
-                colour=discord.Colour.orange(),
-            ).set_footer(text=f"Timeout: {timeout} seconds"),
-        )
+        try:
+            await interaction.message.edit(
+                embed=discord.Embed(
+                    title="Awaiting image...",
+                    description="\n".join((
+                        "Reply to this message with "
+                        + ("an image" if (max_images or 2) == 1 else f"up to {max_images} images"),
+                        f"Timeout: <t:{int(time.time() + timeout)}:R>",
+                    )),
+                    colour=discord.Colour.orange(),
+                ),
+                view=self,
+            )
+        finally:
+            for child in self.children:
+                child.disabled = False
 
         def reply_check(message: discord.Message) -> bool:
             if message.author.id != self.author_id or message.channel.id != interaction.channel_id:
@@ -885,53 +923,56 @@ class SourceImageView(LongLastingView):
                 return False
             return True
 
-        try:
-            reply = await interaction.client.wait_for("message", check=reply_check, timeout=timeout)
-        except asyncio.TimeoutError:
-            await interaction.message.edit(**await get_source_image_params(self.generation_request, self.apis))
-            return
+        user_reply = await interaction.client.wait_for("message", check=reply_check, timeout=timeout)
 
-        def get_image_url() -> str | None:
-            for attachment in reply.attachments:
+        def get_image_urls() -> Generator[str, None, None]:
+            for attachment in user_reply.attachments:
                 if attachment.content_type.startswith("image/"):
-                    return attachment.proxy_url
-            for embed in reply.embeds:
+                    yield attachment.proxy_url
+            for embed in user_reply.embeds:
                 if embed.thumbnail:
-                    return embed.thumbnail.proxy_url
+                    yield embed.thumbnail.proxy_url
                 if embed.image:
-                    return embed.image.proxy_url
-            return None
+                    yield embed.image.proxy_url
 
-        # There appears to be a race condition here somehow?
-        await asyncio.sleep(0.5)
-        if (image_url := get_image_url()) is None:
-            await interaction.message.edit(
-                embed=discord.Embed(
-                    title="No image found",
-                    description="No image was found in your reply. Try again.",
-                    colour=discord.Colour.red(),
-                ),
-            )
-            await asyncio.sleep(5)
-            await interaction.message.edit(**await get_source_image_params(self.generation_request, self.apis))
+        images = []
+        for i, image_url in enumerate(get_image_urls()):
+            if max_images is not None and i >= max_images:
+                break
+            async with self.apis.session.get(image_url) as response:
+                if not response.ok:
+                    raise RuntimeError(f"Failed to fetch image from {image_url}.")
+                images.append(Base64Image(await response.read()))
+        with contextlib.suppress(discord.HTTPException):
+            await user_reply.delete()
+        return images
+
+    @discord.ui.button(label="Set source image", style=discord.ButtonStyle.green, row=0)
+    async def set_image(self, interaction: discord.Interaction, _):
+        await interaction.response.defer()
+
+        try:
+            images = await self.ask_for_images(interaction, max_images=1)
+        except asyncio.TimeoutError:
+            with contextlib.suppress(discord.NotFound):  # Message might have been deleted/canceled
+                await interaction.message.edit(
+                    view=self, **await get_source_image_params(self.generation_request, self.apis))
             return
-
-        async with self.apis.session.get(image_url) as response:
-            if response.status != 200:
+        except RuntimeError as error:
+            with contextlib.suppress(discord.NotFound):  # Message might have been deleted/canceled
                 await interaction.message.edit(
                     embed=discord.Embed(
                         title="Failed to fetch image",
-                        description=f"Failed to fetch image from {image_url}.",
+                        description=str(error),
                         colour=discord.Colour.red(),
                     ),
                 )
                 await asyncio.sleep(5)
-                await interaction.message.edit(**await get_source_image_params(self.generation_request, self.apis))
-                return
-            image = Base64Image(await response.read())
+                await interaction.message.edit(
+                    view=self, **await get_source_image_params(self.generation_request, self.apis))
+            return
 
-        await reply.delete()
-        self.source_image = image
+        self.source_image = images[0]
         await interaction.message.edit(view=self, **await get_source_image_params(self.generation_request, self.apis))
 
     @discord.ui.button(label="Delete image", style=discord.ButtonStyle.red, row=0)
@@ -940,7 +981,51 @@ class SourceImageView(LongLastingView):
         self.source_image = None
         await interaction.message.edit(view=self, **await get_source_image_params(self.generation_request, self.apis))
 
-    @discord.ui.button(label="Image is ControlNet map: No", style=discord.ButtonStyle.red, row=1)
+    @discord.ui.button(label='Add "extra" images', style=discord.ButtonStyle.green, row=1)
+    async def add_extra_images(self, interaction: discord.Interaction, _):
+        await interaction.response.defer()
+        try:
+            images = await self.ask_for_images(interaction, max_images=5, timeout=25)
+        except asyncio.TimeoutError:
+            with contextlib.suppress(discord.NotFound):
+                await interaction.message.edit(
+                    view=self, **await get_source_image_params(self.generation_request, self.apis))
+            return
+        except RuntimeError as error:
+            with contextlib.suppress(discord.NotFound):
+                await interaction.message.edit(
+                    embed=discord.Embed(
+                        title="Failed to fetch image",
+                        description=str(error),
+                        colour=discord.Colour.red(),
+                    ),
+                )
+                await asyncio.sleep(5)
+                await interaction.message.edit(
+                    view=self, **await get_source_image_params(self.generation_request, self.apis))
+            return
+
+        if self.extra_source_images is not None:
+            self.extra_source_images.extend(images)
+        else:
+            self.extra_source_images = images
+        await interaction.message.edit(view=self, **await get_source_image_params(self.generation_request, self.apis))
+
+    @discord.ui.button(label="Reset extra images", style=discord.ButtonStyle.red, row=1)
+    async def reset_extra_images(self, interaction: discord.Interaction, _):
+        await interaction.response.defer()
+        self.extra_source_images = []
+        await interaction.message.edit(view=self, **await get_source_image_params(self.generation_request, self.apis))
+
+    @discord.ui.button(label="Delete last extra image", style=discord.ButtonStyle.red, row=1)
+    async def delete_last_extra_image(self, interaction: discord.Interaction, _):
+        await interaction.response.defer()
+        if self.extra_source_images:
+            self.extra_source_images.pop()
+            await interaction.message.edit(
+                view=self, **await get_source_image_params(self.generation_request, self.apis))
+
+    @discord.ui.button(label="Image is ControlNet map: No", style=discord.ButtonStyle.red, row=2)
     async def controlnet_image_toggle(self, interaction: discord.Interaction, button: discord.ui.Button):
         if (
             not self.generation_request.params.image_is_control
@@ -961,7 +1046,7 @@ class SourceImageView(LongLastingView):
         await interaction.response.defer()
         await interaction.message.edit(view=self)
 
-    @discord.ui.button(label="Return control map: No", style=discord.ButtonStyle.red, row=1)
+    @discord.ui.button(label="Return control map: No", style=discord.ButtonStyle.red, row=2)
     async def return_control_map_toggle(self, interaction: discord.Interaction, button: discord.ui.Button):
         if (
             not self.generation_request.params.return_control_map
