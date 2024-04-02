@@ -10,14 +10,13 @@ from discord.ext import commands, tasks
 from discord.user import _UserTag as UserTag
 
 import breadcord
-from .advanced_generate import GenerationSettingsView, get_settings_embeds
+from .advanced_generate import GenerationSettingsView, files_from_request, get_settings_embeds
 from .ai_horde.cache import Cache
 from .ai_horde.interface import CivitAIAPI, HordeAPI, SearchCategory
 from .ai_horde.models.civitai import CivitAIModel, CivitAIModelVersion, ModelType, SearchFilter, SortOptions
 from .ai_horde.models.general import HordeRequestError
 from .ai_horde.models.horde_meta import HordeNews
 from .ai_horde.models.image import (
-    Base64Image,
     CaptionResult,
     ExtraSourceImage,
     GenericProcessedImageResult,
@@ -66,17 +65,23 @@ class ArtificialDreaming(
     def __init__(self, module_id: str) -> None:
         super().__init__(module_id)
         # All set in cog_load
-        self.generic_session: aiohttp.ClientSession = None  # type: ignore[assignment]
-        self.anon_horde: HordeAPI = None  # type: ignore[assignment]
-        self.civitai: CivitAIAPI = None  # type: ignore[assignment]
-        self.cache: Cache = None  # type: ignore[assignment]
-        self.database: sqlite3.Connection = None  # type: ignore[assignment]
-        self.db_cursor: sqlite3.Cursor = None  # type: ignore[assignment]
+        self.generic_session: aiohttp.ClientSession | None = None
+        self.anon_horde: HordeAPI | None = None
+        self.civitai: CivitAIAPI | None = None
+        self.cache: Cache | None = None
+        self.database: sqlite3.Connection | None = None
+        self.db_cursor: sqlite3.Cursor | None = None
 
         self._common_headers = {
             "User-Agent": f"Breadcord {self.module.manifest.name}/{self.module.manifest.version}",
         }
         self.horde_apis: dict[int, HordeAPI] = {}
+
+        self.edit_ctx_menu = app_commands.ContextMenu(
+            name="Edit image with AI",
+            callback=self.edit_image_callback,
+        )
+        self.bot.tree.add_command(self.edit_ctx_menu)
 
     async def cog_load(self) -> None:
         self.generic_session = aiohttp.ClientSession()
@@ -289,7 +294,6 @@ class ArtificialDreaming(
                 negative_prompt=negative_prompt,
                 nsfw=True,
                 params=ImageGenerationParams(image_count=1),
-                replacement_filter=True,
             ).apply_style(chosen_style, cache=self.cache)
         else:
             request = ImageGenerationRequest(
@@ -307,7 +311,6 @@ class ArtificialDreaming(
                     image_count=1,
                 ),
                 allow_downgrade=True,
-                replacement_filter=True,
             )
         try:
             async for finished_image_pair in self.horde_for(ctx.author).generate_image(request):
@@ -340,19 +343,14 @@ class ArtificialDreaming(
         prompt: str,
         negative_prompt: str | None = None,
     ) -> None:
-        source_image = None
-        if ctx.message.attachments:
-            async with self.generic_session.get(ctx.message.attachments[0].url) as response:
-                source_image = Base64Image(await response.read())
-
+        image_urls = [attachment.proxy_url for attachment in ctx.message.attachments]
         generation_request = ImageGenerationRequest(
             positive_prompt=prompt,
             negative_prompt=negative_prompt,
-            source_image=source_image,
+            source_image=image_urls[0] if image_urls else None,
             params=ImageGenerationParams(
                 karras=True,
             ),
-            replacement_filter=True,
         )
         apis = APIPackage(self.horde_for(ctx.author), self.civitai, self.cache, self.logger, self.generic_session)
         try:
@@ -404,6 +402,37 @@ class ArtificialDreaming(
 
         view = CivitAIModelBrowserView(models, cache=self.cache)
         await ctx.reply(**(await view.get_page()).unpack(), view=view)
+
+    async def edit_image_callback(self, interaction: discord.Interaction, message: discord.Message) -> None:
+        image_urls = [attachment.proxy_url for attachment in message.attachments]
+        for embed in message.embeds:
+            image_urls.extend((
+                embed.image.url,
+                embed.thumbnail.url,
+            ))
+        if not image_urls or not image_urls[0]:
+            await interaction.response.send_message("Message does not contain an image.", ephemeral=True)
+            return
+
+        generation_request = ImageGenerationRequest(
+            positive_prompt=message.content[:200] or "No prompt! Go into the basic options to set one.",
+            source_image=image_urls[0],
+            params=ImageGenerationParams(
+                karras=True,
+            ),
+        )
+        apis = APIPackage(self.horde_for(interaction.user), self.civitai, self.cache, self.logger, self.generic_session)
+        try:
+            view = GenerationSettingsView(apis=apis, default_request=generation_request, author_id=interaction.user.id)
+            await interaction.response.send_message(
+                "Choose generation settings",
+                view=view,
+                embeds=await get_settings_embeds(generation_request, apis),
+                files=(await files_from_request(generation_request, session=self.generic_session))[:10],
+            )
+        except HordeRequestError as error:
+            await report_error(interaction, error)
+            self.logger.exception("Error occurred while generating image.")
 
 
 async def setup(bot: breadcord.Bot):

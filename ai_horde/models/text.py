@@ -6,6 +6,7 @@ from .general import HordeModel, HordeRequest, RenamedField
 from .horde_meta import GenerationCheck
 
 
+# noinspection SpellCheckingInspection
 class TextGenerationParams(HordeModel):
     # TODO: Document fields with missing descriptions
 

@@ -177,7 +177,9 @@ class Style(StyleBase):
             },
         )
 
+        # noinspection Pydantic
         request_fields = set(ImageGenerationRequest.model_fields.keys())
+        # noinspection Pydantic
         params_fields = set(ImageGenerationParams.model_fields.keys())
         for field, value in style.items():
             if value is None:

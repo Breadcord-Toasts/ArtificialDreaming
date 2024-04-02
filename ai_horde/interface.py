@@ -27,7 +27,7 @@ from .models.image import (
 from .models.text import FinishedTextGeneration, TextGenerationRequest, TextGenerationStatus
 
 _T = TypeVar("_T")
-_M = TypeVar("_M", bound=BaseModel)
+AnyModel = TypeVar("AnyModel", bound=BaseModel)
 
 
 class URL(str):
@@ -458,11 +458,11 @@ async def _concurrent_page_items_fetch(
     increment_param: str = "page",
     *,
     logger: Logger,
-    model: type[_M],
+        model: type[AnyModel],
     pages: int = 1,
     start_at: int = 1,
     max_concurrent: int = 5,
-) -> list[_M]:
+) -> list[AnyModel]:
     ...
 
 
@@ -472,11 +472,11 @@ async def _concurrent_page_items_fetch(
     increment_param: str = "page",
     *,
     logger: Logger,
-    model: type[_M] | None = None,
+        model: type[AnyModel] | None = None,
     pages: int = 1,
     start_at: int = 1,
     max_concurrent: int = 5,
-) -> list[JsonLike | _M]:
+) -> list[JsonLike | AnyModel]:
     """Fetch items from a paginated API endpoint with a maximum number of concurrent requests."""
     async def fetch_page_items(page_url: str) -> JsonLike:
         result = await json_request(self.session, HTTPMethod.GET, page_url)

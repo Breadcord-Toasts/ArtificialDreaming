@@ -8,7 +8,6 @@ from discord.ext import commands
 
 from .ai_horde.cache import Cache
 from .ai_horde.interface import CivitAIAPI, HordeAPI
-from .ai_horde.models.image import Base64Image
 
 __all__ = [
     "fetch_image",
@@ -19,10 +18,14 @@ __all__ = [
 ]
 
 
-async def fetch_image(image: Base64Image | str, session: aiohttp.ClientSession) -> io.BytesIO:
-    if isinstance(image, Base64Image):
-        return image.to_bytesio()
+async def fetch_image(image: str | bytes, session: aiohttp.ClientSession) -> io.BytesIO:
+    if not image:
+        raise ValueError("No image provided. Was empty data received?")
+    if isinstance(image, bytes):
+        return io.BytesIO(image)
     async with session.get(image) as response:
+        if not response.ok:
+            raise RuntimeError(f"Failed to fetch image: {response.status} {response.reason} ({image})")
         return io.BytesIO(await response.read())
 
 

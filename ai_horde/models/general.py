@@ -1,9 +1,12 @@
+import logging
 import time
 from collections.abc import Hashable
 from typing import Any, Literal, TypeVar
 
 from pydantic import AliasChoices, BaseModel
 from pydantic import Field as PydanticField
+
+model_logger = logging.getLogger(__name__)
 
 
 class HordeModel(BaseModel):

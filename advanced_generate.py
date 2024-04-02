@@ -8,6 +8,7 @@ import time
 from collections.abc import Generator
 from typing import Any, TypedDict
 
+import aiohttp
 import discord
 from discord import Interaction
 from pydantic import ValidationError
@@ -16,7 +17,6 @@ from .ai_horde.models.civitai import CivitAIModel, CivitAIModelVersion, ModelTyp
 from .ai_horde.models.general import HordeRequestError
 from .ai_horde.models.horde_meta import ActiveModel, GenerationResponse
 from .ai_horde.models.image import (
-    Base64Image,
     ControlType,
     ImageGenerationParams,
     ImageGenerationRequest,
@@ -473,11 +473,9 @@ class GenerationSettingsView(LongLastingView):
             author_id=self.author_id,
             generation_request=self.generation_request,
         )
-        params = await get_source_image_params(self.generation_request, self.apis)
         await interaction.response.send_message(
             view=view,
-            embed=params["embed"],
-            files=params["attachments"],
+            **await get_source_image_params(self.generation_request, self.apis, send_new=True),
         )
         await view.wait()
         await defer_and_edit(interaction, self.generation_request, self.apis, responded_already=True, update_image=True)
@@ -807,35 +805,51 @@ class ControlTypeSelect(discord.ui.Select):
 
 class SourceImageParams(TypedDict):
     embed: discord.Embed
-    attachments: list[discord.File]
+    files: list[discord.File] | None
+    attachments: list[discord.File] | None
+
+
+async def files_from_request(request: ImageGenerationRequest, /, session: aiohttp.ClientSession) -> list[discord.File]:
+    attachments = []
+    if request.source_image:
+        attachments.append(discord.File(
+            await fetch_image(request.source_image, session=session),
+            filename="source_image.webp",
+        ))
+    for i, extra_source_image in enumerate(request.extra_source_images or []):
+        attachments.append(discord.File(
+            await fetch_image(extra_source_image, session=session),
+            filename=f"extra_source_image_{i}.webp",
+        ))
+    if request.source_mask:
+        attachments.append(discord.File(
+            await fetch_image(request.source_mask, session=session),
+            filename="source_mask.webp",
+        ))
+    return attachments
 
 
 # noinspection PyUnusedLocal
-async def get_source_image_params(generation_request: ImageGenerationRequest, apis: APIPackage) -> SourceImageParams:
-    attachments = []
-    if generation_request.source_image:
-        attachments.append(discord.File(
-            generation_request.source_image.to_bytesio(),
-            filename="source_image.webp",
-        ))
-    for i, extra_source_image in enumerate(generation_request.extra_source_images or []):
-        attachments.append(discord.File(
-            extra_source_image.to_bytesio(),
-            filename=f"extra_source_image_{i}.webp",
-        ))
-
-    return SourceImageParams(
+async def get_source_image_params(
+        generation_request: ImageGenerationRequest,
+        apis: APIPackage,
+        send_new: bool = False,
+) -> SourceImageParams:
+    files = await files_from_request(generation_request, session=apis.session)
+    params: SourceImageParams = dict(
         embed=discord.Embed(
             title="Source image",
             description=(
                 f"Selected control type: "
                 f"{generation_request.params.control_type.value if generation_request.params.control_type else 'None'}"
             ),
-        ).set_image(
-            url="attachment://source_image.webp",
-        ),
-        attachments=attachments,
+        ).set_image(url="attachment://source_image.webp"),
     )
+    if send_new:
+        params["files"] = files
+    else:
+        params["attachments"] = files
+    return params
 
 
 class SourceImageView(LongLastingView):
@@ -858,11 +872,11 @@ class SourceImageView(LongLastingView):
         self.add_item(self.control_type_select)
 
     @property
-    def source_image(self) -> Base64Image | None:
+    def source_image(self) -> bytes | str | None:
         return self.generation_request.source_image
 
     @source_image.setter
-    def source_image(self, value: Base64Image | None) -> None:
+    def source_image(self, value: bytes | str | None) -> None:
         self.generation_request.source_image = value
         if value is None:
             if self.delete_image in self.children:
@@ -871,11 +885,11 @@ class SourceImageView(LongLastingView):
             self.add_item(self.delete_image)
 
     @property
-    def extra_source_images(self) -> list[Base64Image]:
+    def extra_source_images(self) -> list[bytes | str] | None:
         return self.generation_request.extra_source_images
 
     @extra_source_images.setter
-    def extra_source_images(self, value: list[Base64Image]) -> None:
+    def extra_source_images(self, value: list[bytes | str] | None) -> None:
         self.generation_request.extra_source_images = value
         if not value:
             if self.reset_extra_images in self.children:
@@ -893,12 +907,11 @@ class SourceImageView(LongLastingView):
 
     async def ask_for_images(
         self, interaction: discord.Interaction, max_images: int | None = None, timeout: int = 15,
-    ) -> list[Base64Image]:
+    ) -> list[bytes]:
         for button in self.children:
             if button in [self.cancel]:
                 continue
             button.disabled = True
-
         try:
             await interaction.message.edit(
                 embed=discord.Embed(
@@ -935,14 +948,15 @@ class SourceImageView(LongLastingView):
                 if embed.image:
                     yield embed.image.proxy_url
 
-        images = []
+        images: list[bytes] = []
         for i, image_url in enumerate(get_image_urls()):
             if max_images is not None and i >= max_images:
                 break
+            # We need to fetch because the image URL will expire after a while when deleted
             async with self.apis.session.get(image_url) as response:
                 if not response.ok:
                     raise RuntimeError(f"Failed to fetch image from {image_url}.")
-                images.append(Base64Image(await response.read()))
+                images.append(await response.read())
         with contextlib.suppress(discord.HTTPException):
             await user_reply.delete()
         return images
@@ -956,7 +970,9 @@ class SourceImageView(LongLastingView):
         except asyncio.TimeoutError:
             with contextlib.suppress(discord.NotFound):  # Message might have been deleted/canceled
                 await interaction.message.edit(
-                    view=self, **await get_source_image_params(self.generation_request, self.apis))
+                    view=self,
+                    **await get_source_image_params(self.generation_request, self.apis),
+                )
             return
         except RuntimeError as error:
             with contextlib.suppress(discord.NotFound):  # Message might have been deleted/canceled
@@ -969,7 +985,9 @@ class SourceImageView(LongLastingView):
                 )
                 await asyncio.sleep(5)
                 await interaction.message.edit(
-                    view=self, **await get_source_image_params(self.generation_request, self.apis))
+                    view=self,
+                    **await get_source_image_params(self.generation_request, self.apis),
+                )
             return
 
         self.source_image = images[0]
@@ -989,7 +1007,9 @@ class SourceImageView(LongLastingView):
         except asyncio.TimeoutError:
             with contextlib.suppress(discord.NotFound):
                 await interaction.message.edit(
-                    view=self, **await get_source_image_params(self.generation_request, self.apis))
+                    view=self,
+                    **await get_source_image_params(self.generation_request, self.apis),
+                )
             return
         except RuntimeError as error:
             with contextlib.suppress(discord.NotFound):
@@ -1002,7 +1022,9 @@ class SourceImageView(LongLastingView):
                 )
                 await asyncio.sleep(5)
                 await interaction.message.edit(
-                    view=self, **await get_source_image_params(self.generation_request, self.apis))
+                    view=self,
+                    **await get_source_image_params(self.generation_request, self.apis),
+                )
             return
 
         if self.extra_source_images is not None:
@@ -1023,7 +1045,9 @@ class SourceImageView(LongLastingView):
         if self.extra_source_images:
             self.extra_source_images.pop()
             await interaction.message.edit(
-                view=self, **await get_source_image_params(self.generation_request, self.apis))
+                view=self,
+                **await get_source_image_params(self.generation_request, self.apis),
+            )
 
     @discord.ui.button(label="Image is ControlNet map: No", style=discord.ButtonStyle.red, row=2)
     async def controlnet_image_toggle(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -1094,10 +1118,9 @@ async def defer_and_edit(
 
     params = {}
     if update_image:
-        params["attachments"] = [discord.File(
-            generation_request.source_image.to_bytesio(),
-            filename="source_image.webp",
-        )] if generation_request.source_image else []
+        files = await files_from_request(generation_request, session=apis.session)
+        params["attachments"] = files[:10]
+
     if view is not None:
         params["view"] = view
 
@@ -1468,7 +1491,7 @@ async def process_generation(
         if generation_check.done:
             break
 
-        estimated_done_at = int(time.time() + max(generation_check.wait_time, time_between_checks+1))
+        estimated_done_at = int(time.time() + max(generation_check.wait_time, time_between_checks + 1) + 1)
         embed.description = (
             f"{generic_wait_message}"
             + (f"Generated {generation_check.finished}/{requested_images} images. \n" if requested_images > 1 else "")
