@@ -131,7 +131,7 @@ class Cache:
         for category, references in self.style_categories.items():
             for reference in references:
                 if reference not in valid_references:
-                    self.logger.error(f"Style {reference} not found in styles list, removing from category {category}")
+                    self.logger.warning(f"Style {reference} not found in styles list, removing from category {category}")
                     references.remove(reference)
             self.style_categories[category] = references
 

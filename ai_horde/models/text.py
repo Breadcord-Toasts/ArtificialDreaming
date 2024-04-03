@@ -73,13 +73,21 @@ class TextGenerationParams(HordeModel):
         ge=0.0, le=5.0,
     )
 
-    single_line: int | None = RenamedField(
+    auto_padding: bool | None = RenamedField(
+        None,
+        description=(
+            "When enabled, adds a white space at the begining of the input prompt "
+            "if there is no trailing whitespace at the end of the previous action"
+        ),
+        renamed_to="auto_padding", original_name="frmtadsnsp",
+    )
+    single_line: bool | None = RenamedField(
         None,
         description="When enabled, removes everything after the first line of the output, including the newline.",
         renamed_to="single_line", original_name="singleline",
     )
     # I want to have a serius word with whoever named these
-    merge_consecutive_newlines: int | None = RenamedField(
+    merge_consecutive_newlines: bool | None = RenamedField(
         None,
         description=(
             "When enabled, replaces all occurrences of two or more consecutive newlines in the output with one newline."
@@ -185,11 +193,23 @@ class TextGenerationRequest(HordeRequest):
         default=None,
         description="If true, the estimated kudo cost of the request will be returned instead of generated text.",
     )
+    allow_downgrade: bool | None = Field(
+        default=None,
+        description="If true, the request will be allowed to be downgraded in case the upfront kudos cost is not met. ",
+    )
     proxied_account: str | None = Field(
         default=None,
         description=(
             "If using a service account as a proxy, "
             "provide this value to identify the actual account from which this request is coming from."
+        ),
+    )
+    # You're on your own for this, this lib won't help you with these
+    webhook: str | None = Field(
+        default=None,
+        description=(
+            "Provide a URL where the AI Horde will send a POST call after each delivered generation. "
+            "The request will include the details of the job as well as the request ID."
         ),
     )
 

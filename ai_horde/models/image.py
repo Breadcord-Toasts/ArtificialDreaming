@@ -414,6 +414,15 @@ class ImageGenerationRequest(HordeRequest):
         description="If true, the estimated kudo cost of the request will be returned instead of generating an image.",
     )
 
+    disable_batching: bool | None = Field(
+        default=None,
+        description=(
+            "If true, the request will not use batching. "
+            "This will allow accurate retrieval of seeds. "
+            "This feature is restricted to trusted users and patrons."
+        ),
+    )
+
     allow_downgrade: bool | None = Field(
         default=None,
         description=(
@@ -421,7 +430,6 @@ class ImageGenerationRequest(HordeRequest):
             "This means that resolution will be lowered while keeping the aspect ratio the same."
         ),
     )
-
     shared: bool | None = Field(
         default=None,
         description=(
@@ -430,12 +438,19 @@ class ImageGenerationRequest(HordeRequest):
             "If the user is anonymous, this will allways be treated as true."
         ),
     )
-
     proxied_account: str | None = Field(
         default=None,
         description=(
             "If using a service account as a proxy, "
             "provide this value to identify the actual account from which this request is coming from."
+        ),
+    )
+    # You're on your own for this, this lib won't help you with these
+    webhook: str | None = Field(
+        default=None,
+        description=(
+            "Provide a URL where the AI Horde will send a POST call after each delivered generation. "
+            "The request will include the details of the job as well as the request ID."
         ),
     )
 

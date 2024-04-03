@@ -1209,10 +1209,13 @@ async def get_finished_embed(
     if len(individual_seeds := [gen.seed for gen in finished_generation.generations]) > 1:
         append_truthy("Individual seeds", ", ".join(individual_seeds))
     append_truthy("NSFW", generation_request.nsfw)
-    append_truthy("Models", ", ".join({
-        generation.model
-        for generation in finished_generation.generations
-    }))
+    append_truthy(
+        ("Models" if len(finished_generation.generations) > 1 else "Model"),
+        ", ".join({
+            generation.model
+            for generation in finished_generation.generations
+        })
+    )
     append_truthy(
         "Resolution",
         f"{generation_request.params.width or 512}x{generation_request.params.height or 512}",
@@ -1232,7 +1235,7 @@ async def get_finished_embed(
     )
     description.append("")
     append_truthy("Finished by", ", ".join({
-        generation.worker_id
+        f"{generation.worker_name} ({generation.worker_id})"
         for generation in finished_generation.generations
     }))
 

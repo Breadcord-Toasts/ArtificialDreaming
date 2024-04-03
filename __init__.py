@@ -31,7 +31,7 @@ from .ai_horde.models.image import (
     TextualInversion,
 )
 from .ai_horde.models.other_sources import Style
-from .ai_horde.models.text import TextGenerationRequest
+from .ai_horde.models.text import TextGenerationRequest, TextGenerationParams
 from .civitai_browser import CivitAIModelBrowserView
 from .helpers import APIPackage, LongLastingView, fetch_image, report_error
 from .login import LoginButtonView
@@ -269,7 +269,7 @@ class ArtificialDreaming(
     @app_commands.autocomplete(
         style=style_autocomplete,
     )
-    async def generate(
+    async def image_generate(
         self,
         ctx: commands.Context,
         *,
@@ -433,6 +433,33 @@ class ArtificialDreaming(
         except HordeRequestError as error:
             await report_error(interaction, error)
             self.logger.exception("Error occurred while generating image.")
+
+    @commands.hybrid_command()
+    async def text_generate(self, ctx: commands.Context, *, prompt: str) -> None:
+        # TODO: Figure out how to make it act like a chat, even when we don't know the model that's going to be used?
+        request = TextGenerationRequest(
+            prompt=prompt,
+            params=TextGenerationParams(
+                max_length=512,
+                single_line=True,
+                remove_unfinished_tail=True,
+            ),
+            allow_downgrade=True,
+        )
+        async with ctx.typing():
+            generations = await anext(self.horde_for(ctx.author).generate_text(request))
+
+        for generation in generations:
+            await ctx.reply(
+                generation.text,
+                embed=discord.Embed(
+                    title="Text Generation",
+                    description="\n".join((
+                        f"**Model:** {generation.model}",
+                        f"**Finished by:** {generation.worker_name} (`{generation.worker_id}`)",
+                    )),
+                ),
+            )
 
 
 async def setup(bot: breadcord.Bot):
