@@ -456,7 +456,7 @@ class ArtificialDreaming(
             generations = await anext(self.horde_for(ctx.author).generate_text(request))
 
         for generation in generations:
-            text = f"{prompt.rsplit()} {generation.text}"
+            text = f"{prompt.rstrip()} {generation.text}"
             chunks = [text[i:i+2000] for i in range(0, len(text), 2000)]
             if len(chunks) != 1:
                 await ctx.reply(chunks[0])
