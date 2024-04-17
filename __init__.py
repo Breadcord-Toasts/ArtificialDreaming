@@ -440,7 +440,7 @@ class ArtificialDreaming(
         request = TextGenerationRequest(
             prompt=prompt,
             params=TextGenerationParams(
-                max_length=512,
+                max_length=256,
                 single_line=True,
                 remove_unfinished_tail=True,
             ),
@@ -450,8 +450,16 @@ class ArtificialDreaming(
             generations = await anext(self.horde_for(ctx.author).generate_text(request))
 
         for generation in generations:
-            await ctx.reply(
-                generation.text,
+            text = f"{prompt.rsplit()} {generation.text}"
+            chunks = [text[i:i+2000] for i in range(0, len(text), 2000)]
+            if len(chunks) != 1:
+                await ctx.reply(chunks[0])
+
+            for chunk in chunks[1:-1]:
+                await ctx.send(chunk)
+
+            await (ctx.reply if len(chunks) == 1 else ctx.send)(
+                content=chunks[-1],
                 embed=discord.Embed(
                     title="Text Generation",
                     description="\n".join((
