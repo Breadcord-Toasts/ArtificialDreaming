@@ -1351,12 +1351,7 @@ def check_truthy(value: str) -> bool | None:
 
 
 class AttachmentDeletionView(LongLastingView):
-    def __init__(
-        self,
-        *args,
-        required_votes: int = 1,
-        **kwargs,
-    ) -> None:
+    def __init__(self, required_votes: int = 2) -> None:
         super().__init__()
         self.required_votes = required_votes
         self.already_voted: set[int] = set()

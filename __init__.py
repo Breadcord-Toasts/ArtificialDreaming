@@ -10,7 +10,8 @@ from discord.ext import commands, tasks
 from discord.user import _UserTag as UserTag
 
 import breadcord
-from .advanced_generate import GenerationSettingsView, files_from_request, get_settings_embeds
+from .advanced_generate import DeleteOrRetryView, GenerationSettingsView, files_from_request, get_settings_embeds, \
+    AttachmentDeletionView
 from .ai_horde.cache import Cache
 from .ai_horde.interface import CivitAIAPI, HordeAPI, SearchCategory
 from .ai_horde.models.civitai import CivitAIModel, CivitAIModelVersion, ModelType, SearchFilter, SortOptions
@@ -69,8 +70,19 @@ class ArtificialDreaming(
         self.anon_horde: HordeAPI | None = None
         self.civitai: CivitAIAPI | None = None
         self.cache: Cache | None = None
-        self.database: sqlite3.Connection | None = None
-        self.db_cursor: sqlite3.Cursor | None = None
+
+        self.database: sqlite3.Connection = sqlite3.connect(self.module.storage_path / "database.db")
+        self.db_cursor: sqlite3.Cursor = self.database.cursor()
+        self.db_cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                discord_id INTEGER PRIMARY KEY,
+                horde_api_key TEXT,
+                civitai_api_key TEXT
+            )
+            """,
+        )
+        self.database.commit()
 
         self._common_headers = {
             "User-Agent": f"Breadcord {self.module.manifest.name}/{self.module.manifest.version}",
@@ -108,18 +120,6 @@ class ArtificialDreaming(
             formatted_cache=self.bot.settings.debug.value,
         )
 
-        self.database = sqlite3.connect(self.module.storage_path / "database.db")
-        self.db_cursor = self.database.cursor()
-        self.db_cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS users (
-                discord_id INTEGER PRIMARY KEY,
-                horde_api_key TEXT,
-                civitai_api_key TEXT
-            )
-            """,
-        )
-        self.database.commit()
         for discord_id, horde_api_key in self.db_cursor.execute(
             "SELECT discord_id, horde_api_key FROM users",
         ).fetchall():
@@ -333,6 +333,7 @@ class ArtificialDreaming(
                 "Finished generation. \n"
                 + (f"Style: {chosen_style.name}" if chosen_style is not None else "")
             ),
+            view=AttachmentDeletionView()
         )
 
     @commands.hybrid_command()
@@ -379,19 +380,20 @@ class ArtificialDreaming(
         models: list[CivitAIModel] | None = None
         if not query:
             models = await self.civitai.get_models(type=model_type)
-        if not models:
-            with contextlib.suppress(HordeRequestError):
-                model = await self.civitai.get_model(query)
-                models = [model] if model and (model_type is None or model.type == model_type) else None
-        if not models:
-            with contextlib.suppress(HordeRequestError):
-                models = await self.civitai.search(
-                    query,
-                    SearchCategory.MODELS,
-                    filters=SearchFilter().model_type(model_type) if model_type else None,
-                    sort=sorting,
-                    limit=10,
-                )
+        else:
+            if not models:
+                with contextlib.suppress(HordeRequestError):
+                    model = await self.civitai.get_model(query)
+                    models = [model] if model and (model_type is None or model.type == model_type) else None
+            if not models:
+                with contextlib.suppress(HordeRequestError):
+                    models = await self.civitai.search(
+                        query,
+                        SearchCategory.MODELS,
+                        filters=SearchFilter().model_type(model_type) if model_type else None,
+                        sort=sorting,
+                        limit=10,
+                    )
 
         if not models:
             await ctx.reply("No models found.", ephemeral=True)
