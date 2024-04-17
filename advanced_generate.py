@@ -5,6 +5,7 @@ import math
 import re
 import textwrap
 import time
+from asyncio.timeouts import timeout
 from collections.abc import Generator
 from typing import Any, TypedDict
 
@@ -13,6 +14,7 @@ import discord
 from discord import Interaction
 from pydantic import ValidationError
 
+from breadcord.helpers import simple_button
 from .ai_horde.models.civitai import CivitAIModel, CivitAIModelVersion, ModelType
 from .ai_horde.models.general import HordeRequestError
 from .ai_horde.models.horde_meta import ActiveModel, GenerationResponse
@@ -1350,23 +1352,29 @@ def check_truthy(value: str) -> bool | None:
     return None
 
 
-class AttachmentDeletionView(LongLastingView):
+class AttachmentDeletionView(discord.ui.View):
     def __init__(self, required_votes: int = 2) -> None:
-        super().__init__()
+        super().__init__(timeout=None)
         self.required_votes = required_votes
         self.already_voted: set[int] = set()
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         return interaction.user.id not in self.already_voted
 
-    @discord.ui.button(label="Delete", style=discord.ButtonStyle.red)
+    @simple_button(label="Delete", style=discord.ButtonStyle.red)
     async def delete(self, interaction: discord.Interaction, button: discord.ui.Button):
+        needed_votes = self.required_votes
+        if interaction.guild is None:
+            needed_votes = 1
+        elif interaction.guild.member_count and interaction.guild.member_count < 8:
+            needed_votes = 1
+
         self.already_voted.add(interaction.user.id)
-        button.label = f"Delete ({len(self.already_voted)}/{self.required_votes})"
-        if len(self.already_voted) < self.required_votes:
+        button.label = f"Delete ({len(self.already_voted)}/{needed_votes})"
+        if len(self.already_voted) < needed_votes:
             return
         await interaction.response.defer()
-        await interaction.message.edit(view=None, attachments=[])
+        await interaction.message.edit(attachments=[])
 
 
 class DeleteOrRetryView(AttachmentDeletionView):

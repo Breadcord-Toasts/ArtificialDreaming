@@ -133,9 +133,13 @@ class ArtificialDreaming(
         # if self.bot.settings.debug.value:
         #     # Run tests
 
+        self.bot.add_view(AttachmentDeletionView())
+
     async def cog_unload(self) -> None:
         self.update_cache.cancel()
         self.database.close()
+
+        self.bot.remove_view(AttachmentDeletionView())
 
         if self.generic_session is not None and not self.generic_session.closed:
             await self.generic_session.close()
