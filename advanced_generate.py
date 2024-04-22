@@ -1251,10 +1251,19 @@ async def get_finished_embed(
         ", ".join(ti.identifier for ti in generation_request.params.textual_inversions or []),
     )
     description.append("")
-    append_truthy("Finished by", ", ".join({
-        f"{generation.worker_name} ({generation.worker_id})"
+
+    finished_workers = {
+        (generation.worker_name, generation.worker_id)
         for generation in finished_generation.generations
-    }))
+    }
+    if len(finished_workers) == 1:
+        worker_name, worker_id = next(iter(finished_workers))
+        append_truthy("Finished by", f"{worker_name} (`{worker_id}`)")
+    else:
+        append_truthy("Finished by", "".join(
+            f"\n{worker_name} (`{worker_id}`)"
+            for worker_name, worker_id in finished_workers
+        ))
 
     was_censored = len(finished_generation.generations) <= 1 and finished_generation.generations[0].censored
     embeds = [
