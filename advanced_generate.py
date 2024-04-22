@@ -329,7 +329,7 @@ class BasicOptionsModal(discord.ui.Modal, title="More generation options"):
         await defer_and_edit(interaction, self.current_request, self.apis)
 
     async def on_error(self, interaction: Interaction, error: Exception, /) -> None:
-        await interaction.response.send_message(str(error), ephemeral=True)
+        await report_error(interaction, error)
 
 
 class AdvancedOptionsModal(discord.ui.Modal, title="More generation options"):
@@ -377,20 +377,35 @@ class AdvancedOptionsModal(discord.ui.Modal, title="More generation options"):
         self.add_item(self.clip_skip)
 
     async def on_submit(self, interaction: Interaction, /) -> None:
+        responded_already = False
+
         self.current_request.params.cfg_scale = self._parse_float(self.cfg_scale.value, 0.0, 100.0)
         self.current_request.params.denoising_strength = self._parse_float(self.denoising_strength.value, 0.01, 1.0)
         self.current_request.params.clip_skip = self._parse_int(self.clip_skip.value, 1, 12)
 
-        if (key := self.sampler.value.strip().upper()) in Sampler.__members__:
+        sampler_value = self.sampler.value.strip().upper().replace(" ", "_")
+        if not sampler_value:
+            sampler = None
+        elif sampler_value in Sampler.__members__:
+            sampler = Sampler[sampler_value]
+        elif (key := f"K_{sampler_value}") in Sampler.__members__:
             sampler = Sampler[key]
         else:
-            sampler = self.sampler.value.strip() or None
+            sampler = self.sampler.value.strip()
+            await interaction.response.send_message(
+                "\n".join((
+                    f"Sampler {sampler!r} is not a recognised sampler!",
+                    f"You may proceed with it, but your request will likely be rejected.",
+                )),
+                ephemeral=True,
+            )
+            responded_already = True
         self.current_request.params.sampler = sampler
 
-        await defer_and_edit(interaction, self.current_request, self.apis)
+        await defer_and_edit(interaction, self.current_request, self.apis, responded_already=responded_already)
 
     @staticmethod
-    def _parse_float(value: str, /, min_value: float, max_value: float) -> float | None:
+    def _parse_float(value: Any, /, min_value: float, max_value: float) -> float | None:
         value = value.strip()
         return max(min_value, min(max_value, float(value))) if value else None
 
@@ -403,6 +418,7 @@ class AdvancedOptionsModal(discord.ui.Modal, title="More generation options"):
         try:
             await interaction.response.send_message(str(error), ephemeral=True)
         except discord.InteractionResponded:
+            self.apis.logger.exception("Failed to send error message")
             await report_error(interaction, error)
         raise error
 
@@ -517,12 +533,11 @@ class GenerationSettingsView(LongLastingView):
     @discord.ui.button(label="Generate", style=discord.ButtonStyle.green, row=4, emoji="\N{HEAVY CHECK MARK}")
     async def generate(self, interaction: discord.Interaction, _):
         for item in self.children:
-            if hasattr(item, "disabled") and item != self.get_json:
-                item.disabled = True
-            if hasattr(item, "enabled"):
-                item.enabled = False
+            if item == self.get_json:
+                continue
+            self.remove_item(item)
 
-        await interaction.message.edit(view=self)
+        await interaction.message.edit(view=self, content="Generation requested, settings locked.")
         await interaction.response.defer()
         await process_generation(interaction, self.generation_request, apis=self.apis, reply_to=interaction.message)
 
@@ -1208,7 +1223,7 @@ async def get_finished_embed(
     append_truthy("Prompt", generation_request.positive_prompt)
     append_truthy("Negative prompt", generation_request.negative_prompt)
     append_truthy("Base seed", generation_request.params.seed)
-    if len(individual_seeds := [gen.seed for gen in finished_generation.generations]) > 1:
+    if len(individual_seeds := {gen.seed for gen in finished_generation.generations}) > 1:
         append_truthy("Individual seeds", ", ".join(individual_seeds))
     append_truthy("NSFW", generation_request.nsfw)
     append_truthy(
@@ -1229,7 +1244,7 @@ async def get_finished_embed(
         f"{finished_generation.finished}/{generation_request.params.image_count or 1}",
     )
     append_truthy("Denoising strength", generation_request.params.denoising_strength)
-    append_truthy("Sampler", sampler if (sampler := generation_request.params.sampler) else None)
+    append_truthy("Sampler", sampler.value if (sampler := generation_request.params.sampler) else None)
     append_truthy("LoRAs", ", ".join(lora.identifier for lora in generation_request.params.loras or []))
     append_truthy(
         "Textual inversions",
@@ -1427,12 +1442,14 @@ class CancelGenerationView(discord.ui.View):
         self.author_id = author_id
         self.apis = apis
         self.generation = generation
+        self.canceled = False
 
     async def interaction_check(self, interaction: Interaction, /) -> bool:
         return interaction.user.id == self.author_id
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.red)
     async def cancel_generation(self, interaction: discord.Interaction, _):
+        self.canceled = True
         await interaction.response.defer()
         await self.apis.horde.cancel_image_generation(generation_id=self.generation.id)
         await interaction.message.delete()
@@ -1468,10 +1485,10 @@ async def process_generation(
         return None
 
     requested_images = generation_request.params.image_count or 1
-    generic_wait_message = (
-        f"Please wait while your generation is being processed.\n"
-        f"Generation ID: {queued_generation.id}\n\n"
-    )
+    generic_wait_message = "\n".join((
+        f"Please wait while your generation is being processed.",
+        f"Generation ID: `{queued_generation.id}`\n\n"
+    ))
     embed = discord.Embed(
         title="Generating...",
         description=generic_wait_message,
@@ -1489,13 +1506,29 @@ async def process_generation(
     else:
         message = await reply_to.reply(embed=embed, view=view)
 
-    await asyncio.sleep(5)
+    await asyncio.sleep(8)
 
     time_between_checks = 5
+    last_finished = 0
     while True:
+        if view.canceled:
+            return message
+
         generation_check = await apis.horde.get_image_generation_check(queued_generation.id)
         if generation_check.done:
             break
+
+        params = {}
+        if last_finished < generation_check.finished < requested_images:
+            full_generations = (await apis.horde.get_image_generation_status(queued_generation.id)).generations
+            params["attachments"] = [
+                discord.File(
+                    fp=await fetch_image(generation.img, apis.session),
+                    filename=f"{generation.id}.webp",
+                )
+                for generation in full_generations
+            ]
+            last_finished = generation_check.finished
 
         estimated_done_at = int(time.time() + max(generation_check.wait_time, time_between_checks + 1) + 1)
         embed.description = (
@@ -1503,7 +1536,7 @@ async def process_generation(
             + (f"Generated {generation_check.finished}/{requested_images} images. \n" if requested_images > 1 else "")
             + f"Estimated to be done <t:{estimated_done_at}:R>."
         )
-        await message.edit(embed=embed)
+        await message.edit(embed=embed, **params)
 
         # Generations time out after 10 minutes
         if time.time() - start_time > 60 * 10:

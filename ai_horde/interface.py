@@ -324,7 +324,7 @@ class CivitAIAPI:
         This method is not officially supported by CivitAI and may break at any time.
         It is also very expensive.
         """
-        data: dict[str, list[dict[str, Any]]] = await json_request(
+        data: JsonLike = await json_request(
             self.session, HTTPMethod.POST,
             "meilisearch-v1-6" / CIVITAI_API_DOMAIN.base / "multi-search",
             headers={
