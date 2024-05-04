@@ -13,8 +13,8 @@ import breadcord
 from .advanced_generate import DeleteOrRetryView, GenerationSettingsView, files_from_request, get_settings_embeds, \
     AttachmentDeletionView
 from .ai_horde.cache import Cache
-from .ai_horde.interface import CivitAIAPI, HordeAPI, SearchCategory
-from .ai_horde.models.civitai import CivitAIModel, CivitAIModelVersion, ModelType, SearchFilter, SortOptions
+from .ai_horde.interface import CivitAIAPI, HordeAPI
+from .ai_horde.models.civitai import CivitAIModel, CivitAIModelVersion, ModelType, SortOptions, SearchPeriod
 from .ai_horde.models.general import HordeRequestError
 from .ai_horde.models.horde_meta import HordeNews
 from .ai_horde.models.image import (
@@ -373,31 +373,36 @@ class ArtificialDreaming(
     async def civitai_search(
         self,
         ctx: commands.Context,
-        *, query: str | None = None,
+        *,
+        query: str | None = None,
         sorting: SortOptions | None = None,
+        period: SearchPeriod | None = None,
         model_type: ModelType | None = None,
-        show_nsfw: bool = False,
+        show_nsfw: bool = True,  # Default to true in NSFW channels
+        by_user: str | None = None,
     ) -> None:
         if ctx.interaction:
             await ctx.defer()
+        self.civitai: CivitAIAPI
+        self.cache: Cache
+
+        if hasattr(ctx.channel, "is_nsfw"):
+            show_nsfw = ctx.channel.is_nsfw() and show_nsfw  # type: ignore[attr-defined]
 
         models: list[CivitAIModel] | None = None
-        if not query:
-            models = await self.civitai.get_models(type=model_type)
-        else:
-            if not models:
-                with contextlib.suppress(HordeRequestError):
-                    model = await self.civitai.get_model(query)
-                    models = [model] if model and (model_type is None or model.type == model_type) else None
-            if not models:
-                with contextlib.suppress(HordeRequestError):
-                    models = await self.civitai.search(
-                        query,
-                        SearchCategory.MODELS,
-                        filters=SearchFilter().model_type(model_type) if model_type else None,
-                        sort=sorting,
-                        limit=10,
-                    )
+        if query:
+            with contextlib.suppress(HordeRequestError):
+                model = await self.civitai.get_model(query)
+                models = [model] if model and (model_type is None or model.type == model_type) else None
+        if not models:
+            models = await self.civitai.get_models(
+                query=query,
+                sort=sorting,
+                period=period,
+                types=[model_type] if model_type else None,
+                nsfw=show_nsfw,
+                creator_username=by_user,
+            )
 
         if not models:
             await ctx.reply("No models found.", ephemeral=True)
@@ -412,10 +417,10 @@ class ArtificialDreaming(
     async def edit_image_callback(self, interaction: discord.Interaction, message: discord.Message) -> None:
         image_urls = [attachment.proxy_url for attachment in message.attachments]
         for embed in message.embeds:
-            image_urls.extend((
+            image_urls.extend(url for url in (
                 embed.image.url,
                 embed.thumbnail.url,
-            ))
+            ) if url)
         if not image_urls or not image_urls[0]:
             await interaction.response.send_message("Message does not contain an image.", ephemeral=True)
             return

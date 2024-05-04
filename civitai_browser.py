@@ -105,6 +105,7 @@ class CivitAIModelBrowserView(PaginatedView):
         embed = discord.Embed(
             title=model.name,
             description="\n".join(s for s in (
+                f"**ID:** {model.id}",
                 f"**Model type:** {model.type}",
                 f"**Tags:** {self._get_tags_str(model)}",
                 f"**NSFW:** {model.nsfw}",

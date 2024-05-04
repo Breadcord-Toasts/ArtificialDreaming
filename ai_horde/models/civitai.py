@@ -1,5 +1,4 @@
 import datetime
-from collections import defaultdict
 from collections.abc import Sequence
 from enum import StrEnum
 from typing import Annotated, Any, Literal
@@ -488,40 +487,16 @@ class CivitAIModel(HordeSuccess):
         return f"https://civitai.com/models/{self.id}"
 
 
-class SearchCategory(StrEnum):
-    MODELS = "models_v5"
-    IMAGES = "images_v3"
-    USERS = "users_v2"
-    ARTICLES = "articles_v3"
-    BOUNTIES = "bounties"
-    COLLECTIONS = "collections"
-
-
 class SortOptions(StrEnum):
-    RATING = "metrics.thumbsUpCount:desc"
-    BUZZ = "metrics.tippedAmountCount:desc"
-    CREATED_AT = "createdAt:desc"
-    DOWNLOADS = "metrics.downloadCount:desc"
-    FAVORITES = "metrics.favoriteCount:desc"
-    COMMENTS = "metrics.commentCount:desc"
-    COLLECTED = "metrics.collectedCount:desc"
+    RATING = "Highest Rated"
+    DOWNLOADED = "Most Downloaded"
+    NEWEST = "Newest"
 
 
-class SearchFilter:
-    def __init__(self) -> None:
-        self._filters: dict[str, list[str]] = defaultdict(list)
+class SearchPeriod(StrEnum):
+    ALL_TIME = "AllTime"
+    YEAR = "Year"
+    MONTH = "Month"
+    WEEK = "Week"
+    DAY = "Day"
 
-    @property
-    def serialized(self) -> list[list[str]]:
-        return [
-            [f'"{key}"="{value}"' for value in values]
-            for key, values in self._filters.items()
-        ]
-
-    def model_type(self, model_type: ModelType, /) -> "SearchFilter":
-        self._filters["type"].append(model_type)
-        return self
-
-    def base_model(self, base_model: str, /) -> "SearchFilter":
-        self._filters["version.baseModel"].append(base_model)
-        return self

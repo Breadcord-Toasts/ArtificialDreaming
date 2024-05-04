@@ -1,18 +1,18 @@
 import asyncio
 import itertools
+import math
 import time
 from collections.abc import AsyncGenerator
-from enum import Enum
 from http import HTTPMethod
 from json import loads as json_loads
 from logging import Logger
-from typing import Any, Coroutine, Self, TypeVar, overload
+from typing import Any, Coroutine, Self, TypeVar
 from urllib.parse import parse_qsl, quote, urlencode, urlparse
 
 import aiohttp
 from pydantic import BaseModel
 
-from .models.civitai import CivitAIModel, CivitAIModelVersion, ModelType, SearchCategory, SearchFilter, SortOptions
+from .models.civitai import CivitAIModel, CivitAIModelVersion, ModelType, SortOptions, SearchPeriod
 from .models.general import HordeRequest, HordeRequestError, SimpleTimedCache
 from .models.horde_meta import ActiveModel, GenerationCheck, GenerationResponse, HordeNews, HordeUser, Team, Worker
 from .models.image import (
@@ -268,31 +268,54 @@ class CivitAIAPI:
         self._cache = SimpleTimedCache(60 * 60 * 12)
 
     async def _fetch_paginated_json_list(self, url: URL, *, pages: int = 1) -> AsyncGenerator[JsonLike, None, None]:
-        total_pages = -1
+        total_pages: int = -1
         for page in range(1, pages + 1):
             if total_pages != -1 and page > total_pages:
                 break
             self.logger.debug(f"Fetching page {page} of a requested {pages}: {url}")
-            json = await json_request(self.session, HTTPMethod.GET, url)
+            json: dict = await json_request(self.session, HTTPMethod.GET, url)  # type: ignore[assignment]
             url = json.get("metadata", {}).get("nextPage")
-
-            total_pages = json.get("metadata", {}).get("totalPages", total_pages)
             page_items = json.get("items", [])
+
             if not page_items or url is None:
                 break
             for item in page_items:
                 yield item
 
-    # noinspection PyShadowingBuiltins
+            # TODO: This might no longer be part of the api?
+            metadata_total_pages = json.get("metadata", {}).get("totalPages", total_pages)
+            if isinstance(metadata_total_pages, int):
+                total_pages = metadata_total_pages
+
     async def get_models(
         self,
+        query: str | None = None,
         *,
-        pages: int = 1,
-        type: ModelType | None = None,
+        limit: int = 100,
+        tag: str | None = None,
+        types: list[ModelType] | None = None,
+        creator_username: str | None = None,
+        period: SearchPeriod | None = None,
+        nsfw: bool | None = None,
+        sort: SortOptions | None = None,
     ) -> list[CivitAIModel]:
+        per_page = 100
+        pages = math.ceil(limit / per_page)
+
+        params = dict(
+            query=query,
+            tags=tag,
+            types=[model_type.value for model_type in types] if types else None,
+            username=creator_username,
+            period=period.value if period else None,
+            nsfw=nsfw,
+            sort=sort.value if sort else None,
+        )
+        params = {key: value for key, value in params.items() if value is not None}
+
         url = CIVITAI_API_DOMAIN / "v1/models"
-        if type is not None:
-            url = url.with_params(types=type.value)
+        url = url.with_params(**params)
+
         models = []
         async for model in self._fetch_paginated_json_list(url, pages=pages):
             models.append(CivitAIModel.model_validate(model))
@@ -307,57 +330,10 @@ class CivitAIAPI:
         return CivitAIModelVersion.model_validate(json)
 
     async def get_model_from_version(self, version: CivitAIModelVersion | int | str) -> CivitAIModel | None:
+        # Type checker does not know what is going on :3
         if not isinstance(version, CivitAIModelVersion):
-            version = await self.get_model_version(version)
-        return await self.get_model(version.model_id)
-
-    async def search(
-        self,
-        query: str,
-        category: SearchCategory | str,
-        *,
-        filters: SearchFilter | None = None,
-        sort: SortOptions | None = None,
-        limit: int = 20,
-    ) -> list[CivitAIModel]:
-        """Warning!
-        This method is not officially supported by CivitAI and may break at any time.
-        It is also very expensive.
-        """
-        data: JsonLike = await json_request(
-            self.session, HTTPMethod.POST,
-            "meilisearch-v1-6" / CIVITAI_API_DOMAIN.base / "multi-search",
-            headers={
-                "Content-type": "application/json",
-                # Auth token extracted from CivitAI website (NEXT_PUBLIC_SEARCH_CLIENT_KEY)
-                "Authorization": "Bearer 102312c2b83ea0ef9ac32e7858f742721bbfd7319a957272e746f84fd1e974af",
-                # Again, stolen from browser
-                "X-Meilisearch-Client": "Meilisearch instant-meilisearch (v0.13.5) ; Meilisearch JavaScript (v0.34.0)",
-            },
-            data={
-                "queries": [
-                    {
-                        "q": query,
-                        "indexUid": category.value if isinstance(category, Enum) else category,
-                        "limit": limit,
-                        "offset": 0,
-                    }
-                    | ({"filter": filters.serialized} if filters else {})
-                    | ({"sort": [sort]} if sort else {}),
-                ],
-            },
-        )
-        hits: list[dict[str, Any]] = data["results"][0]["hits"]
-        models = []
-        for hit in hits:
-            if hit["id"] in self._cache:
-                models.append(self._cache[hit["id"]])
-            else:
-                # TODO: Find some compromise so we don't need to re-fetch the models.
-                #  Perhaps by breaking out a PartialCivitAIModel from CivitAIModel?
-                model = self._cache[hit["id"]] = await self.get_model(hit["id"])
-                models.append(model)
-        return models
+            version = await self.get_model_version(version)  # type: ignore
+        return await self.get_model(version.model_id)  # type: ignore
 
 
 async def json_request(
@@ -437,42 +413,13 @@ async def gather_with_max_concurrent(
     return results
 
 
-@overload
 async def _concurrent_page_items_fetch(
     self,
     url: URL,
     increment_param: str = "page",
     *,
     logger: Logger,
-    pages: int = 1,
-    start_at: int = 1,
-    max_concurrent: int = 5,
-) -> list[JsonLike]:
-    ...
-
-
-@overload
-async def _concurrent_page_items_fetch(
-    self,
-    url: URL,
-    increment_param: str = "page",
-    *,
-    logger: Logger,
-        model: type[AnyModel],
-    pages: int = 1,
-    start_at: int = 1,
-    max_concurrent: int = 5,
-) -> list[AnyModel]:
-    ...
-
-
-async def _concurrent_page_items_fetch(
-    self,
-    url: URL,
-    increment_param: str = "page",
-    *,
-    logger: Logger,
-        model: type[AnyModel] | None = None,
+    model: type[AnyModel] | None = None,
     pages: int = 1,
     start_at: int = 1,
     max_concurrent: int = 5,
