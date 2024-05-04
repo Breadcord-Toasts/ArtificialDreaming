@@ -283,7 +283,7 @@ class ArtificialDreaming(
     ) -> None:
         chosen_style: Style | None = None
         if style is not None:
-            chosen_style = self.style_from_name(style)
+            chosen_style = self.style_from_name(style if style != "random" else random.choice(self.cache.styles).name)
             if chosen_style is None:
                 raise commands.BadArgument("Invalid style.")
 
