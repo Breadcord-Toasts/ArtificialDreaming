@@ -136,11 +136,6 @@ class ArtificialDreaming(
         self.bot.add_view(AttachmentDeletionView())
 
     async def cog_unload(self) -> None:
-        self.update_cache.cancel()
-        self.database.close()
-
-        self.bot.remove_view(AttachmentDeletionView())
-
         if self.generic_session is not None and not self.generic_session.closed:
             await self.generic_session.close()
         if self.civitai.session is not None and not self.civitai.session.closed:
@@ -150,6 +145,10 @@ class ArtificialDreaming(
         for api in self.horde_apis.values():
             if not api.session.closed:
                 await api.session.close()
+
+        self.update_cache.cancel()
+        self.database.close()
+        self.bot.remove_view(AttachmentDeletionView())
 
     @tasks.loop(minutes=30)
     async def update_cache(self) -> None:
