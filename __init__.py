@@ -148,7 +148,6 @@ class ArtificialDreaming(
 
         self.update_cache.cancel()
         self.database.close()
-        self.bot.remove_view(AttachmentDeletionView())
 
     @tasks.loop(minutes=30)
     async def update_cache(self) -> None:
