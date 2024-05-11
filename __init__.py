@@ -202,6 +202,7 @@ class ArtificialDreaming(
 
     @commands.hybrid_command()
     async def login(self, ctx: commands.Context) -> None:
+        """Log in to the AI Horde."""
         # TODO: If I ever implement CivitAI login, add it here.
         view = LoginButtonView()
         response = await ctx.reply(
@@ -253,6 +254,7 @@ class ArtificialDreaming(
 
     @commands.hybrid_command()
     async def logout(self, ctx: commands.Context) -> None:
+        """Log out of the AI Horde."""
         self.db_cursor.execute(
             # language=SQLite
             """
@@ -279,6 +281,7 @@ class ArtificialDreaming(
         negative_prompt: str | None = None,
         style: str | None = None,
     ) -> None:
+        """Generate an image."""
         chosen_style: Style | None = None
         if style is not None:
             chosen_style = self.style_from_name(style if style != "random" else random.choice(self.cache.styles).name)
@@ -346,6 +349,7 @@ class ArtificialDreaming(
         prompt: str,
         negative_prompt: str | None = None,
     ) -> None:
+        """Generate an image with advanced customization options."""
         image_urls = [attachment.proxy_url for attachment in ctx.message.attachments]
         generation_request = ImageGenerationRequest(
             positive_prompt=prompt,
@@ -379,6 +383,7 @@ class ArtificialDreaming(
         show_nsfw: bool = True,  # Default to true in NSFW channels
         by_user: str | None = None,
     ) -> None:
+        """Search for models (diffuser, LoRA, TI, etc) on CivitAI."""
         if ctx.interaction:
             await ctx.defer()
         self.civitai: CivitAIAPI
