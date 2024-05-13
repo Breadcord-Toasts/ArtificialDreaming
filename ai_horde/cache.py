@@ -83,9 +83,12 @@ class Cache:
 
     async def update_styles(self) -> None:
         if not self.file_outdated(self._styles_file):
-            if not self.styles:
-                self.styles = await self.load_cache(self._styles_file, model=Style)
-            return
+            try:
+                if not self.styles:
+                    self.styles = await self.load_cache(self._styles_file, model=Style)
+                return
+            except Exception as error:
+                self.logger.error(f"Failed to load styles from cache, fetching from API instead. ({error})")
 
         self.logger.info("Fetching styles...")
         raw_styles = await fetch_github_json_file(self.session, STYLES_LIST)
@@ -102,9 +105,12 @@ class Cache:
 
     async def update_enhancements(self) -> None:
         if not self.file_outdated(self._enhancements_file):
-            if not self.enhancements:
-                self.enhancements = await self.load_cache(self._enhancements_file, model=StyleEnhancement)
-            return
+            try:
+                if not self.enhancements:
+                    self.enhancements = await self.load_cache(self._enhancements_file, model=StyleEnhancement)
+                return
+            except Exception as error:
+                self.logger.error(f"Failed to load enhancements from cache, fetching from API instead. ({error})")
 
         self.logger.info("Fetching enhancements...")
         raw_enhancements: dict[str, dict[str, Any]] = await fetch_github_json_file(self.session, ENHANCEMENTS_LIST)
@@ -120,9 +126,12 @@ class Cache:
 
     async def update_style_categories(self) -> None:
         if not self.file_outdated(self._style_categories_file):
-            if not self.style_categories:
-                self.style_categories = await self.load_cache(self._style_categories_file)
-            return
+            try:
+                if not self.style_categories:
+                    self.style_categories = await self.load_cache(self._style_categories_file)
+                return
+            except Exception as error:
+                self.logger.error(f"Failed to load style categories from cache, fetching from API instead. ({error})")
 
         self.logger.info("Fetching style categories...")
         self.style_categories: dict[str, list[str]] = await fetch_github_json_file(self.session, STYLE_CATEGORY_LIST)
@@ -131,7 +140,9 @@ class Cache:
         for category, references in self.style_categories.items():
             for reference in references:
                 if reference not in valid_references:
-                    self.logger.warning(f"Style {reference} not found in styles list, removing from category {category}")
+                    self.logger.warning(
+                        f"Style {reference} not found in styles list, removing from category {category}"
+                    )
                     references.remove(reference)
             self.style_categories[category] = references
 
@@ -142,12 +153,16 @@ class Cache:
 
     async def update_horde_model_reference(self) -> None:
         if not self.file_outdated(self._horde_model_reference_file):
-            if not self.horde_model_reference:
-                self.horde_model_reference = await self.load_cache(
-                    self._horde_model_reference_file,
-                    model=ModelReference,
-                )
-            return
+            try:
+                if not self.horde_model_reference:
+                    self.horde_model_reference = await self.load_cache(
+                        self._horde_model_reference_file,
+                        model=ModelReference,
+                    )
+                return
+            except Exception as error:
+                self.logger.error(f"Failed to load horde model reference from cache, fetching from API instead. "
+                                  f"({error})")
 
         self.logger.info("Fetching horde model reference...")
         raw_reference = await fetch_github_json_file(self.session, IMAGE_MODEL_REFERENCE_LIST)
@@ -163,12 +178,15 @@ class Cache:
 
     async def update_horde_models(self) -> None:
         if not self.file_outdated(self._horde_models_file):
-            if not self.horde_models:
-                self.horde_models = [
-                    ActiveModel.model_validate(model)
-                    for model in await self.load_cache(self._horde_models_file)
-                ]
-            return
+            try:
+                if not self.horde_models:
+                    self.horde_models = [
+                        ActiveModel.model_validate(model)
+                        for model in await self.load_cache(self._horde_models_file)
+                    ]
+                return
+            except Exception as error:
+                self.logger.error(f"Failed to load horde models from cache, fetching from API instead. ({error})")
 
         self.logger.info("Fetching horde models...")
         self.horde_models = await self.horde.get_models()
@@ -179,12 +197,15 @@ class Cache:
 
     async def update_civitai_models(self) -> None:
         if not self.file_outdated(self._civitai_models_file):
-            if not self.civitai_models:
-                self.civitai_models = [
-                    CivitAIModel.model_validate(model)
-                    for model in await self.load_cache(self._civitai_models_file)
-                ]
-            return
+            try:
+                if not self.civitai_models:
+                    self.civitai_models = [
+                        CivitAIModel.model_validate(model)
+                        for model in await self.load_cache(self._civitai_models_file)
+                    ]
+                return
+            except Exception as error:
+                self.logger.error(f"Failed to load CivitAI models from cache, fetching from API instead. ({error})")
 
         self.logger.info("Fetching CivitAI models...")
         self.civitai_models = await self.civitai.get_models(limit=500)  # TODO: Don't hardcode this number
