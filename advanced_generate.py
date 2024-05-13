@@ -555,7 +555,28 @@ class GenerationSettingsView(LongLastingView):
 
         await interaction.message.edit(view=self, content="Generation requested, settings locked.")
         await interaction.response.defer()
-        await process_generation(interaction, self.generation_request, apis=self.apis, reply_to=interaction.message)
+        await process_generation(
+            interaction,
+            self.generation_request.model_copy(),
+            apis=self.apis,
+            reply_to=interaction.message,
+        )
+
+    @discord.ui.button(
+        label="Generate & edit",
+        style=discord.ButtonStyle.green,
+        row=4,
+        emoji="\N{HEAVY PLUS SIGN}",
+    )
+    async def generate_and_continue(self, interaction: discord.Interaction, _):
+        await interaction.message.edit(view=self, content="Generation requested, settings locked.")
+        await interaction.response.defer()
+        await process_generation(
+            interaction,
+            self.generation_request.model_copy(),
+            apis=self.apis,
+            reply_to=interaction.message,
+        )
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.red, row=4, emoji="\N{HEAVY MULTIPLICATION X}")
     async def cancel(self, interaction: discord.Interaction, _):
