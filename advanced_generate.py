@@ -102,6 +102,9 @@ class ModelSelect(discord.ui.Select):
         ]
 
         self.model_groups: dict[str, list[str] | None] = {
+            "Stable Cascade": [
+                "Stable Cascade 1.0",
+            ],
             "SDXL": [
                 "AlbedoBase XL (SDXL)",
                 "Fustercluck",
@@ -115,6 +118,9 @@ class ModelSelect(discord.ui.Select):
                 "Anything v3",
                 "Anything Diffusion",  # v4.0
                 "Anything v5",
+            ],
+            "Pony Diffusion": [
+                "Pony Diffusion XL"
             ],
             "Realistic": [
                 "ICBINP XL",
@@ -449,6 +455,7 @@ class GenerationSettingsView(LongLastingView):
         self.add_item(self.resolution_select)
 
         self._set_nsfw(self.generation_request.nsfw)
+        self._set_hires_fix(self.generation_request.params.hires_fix)
         # TODO: Put support for post processors somewhere?
         #  Might need to split out lora/ti adding to another message, and also put post processors there.
         #  Remember to deal with facefixer_strength?
@@ -477,7 +484,7 @@ class GenerationSettingsView(LongLastingView):
     def _set_nsfw(self, value: bool) -> None:
         self.generation_request.nsfw = value
         self.nsfw_toggle.style = discord.ButtonStyle.red if value else discord.ButtonStyle.grey
-        self.nsfw_toggle.label = f"Allow NSFW: {'Yes' if value else 'No'}"
+        self.nsfw_toggle.label = " ".join((*self.nsfw_toggle.label.split(" ")[:-1], "Yes" if value else "No"))
 
     @discord.ui.button(label="Allow NSFW: No", style=discord.ButtonStyle.grey, row=2)
     async def nsfw_toggle(self, interaction: discord.Interaction, _):
@@ -529,6 +536,15 @@ class GenerationSettingsView(LongLastingView):
         self.generation_request.params.loras = view.loras
         self.generation_request.params.textual_inversions = view.textual_inversions
         await defer_and_edit(interaction, self.generation_request, self.apis, responded_already=True)
+
+    def _set_hires_fix(self, value: bool) -> None:
+        self.generation_request.params.hires_fix = value
+        self.hires_fix_toggle.label = " ".join((*self.hires_fix_toggle.label.split(" ")[:-1], "Yes" if value else "No"))
+
+    @discord.ui.button(label="Hires fix: No", style=discord.ButtonStyle.grey, row=3)
+    async def hires_fix_toggle(self, interaction: discord.Interaction, _):
+        self._set_hires_fix(not self.generation_request.params.hires_fix)
+        await defer_and_edit(interaction, self.generation_request, self.apis, view=self)
 
     @discord.ui.button(label="Generate", style=discord.ButtonStyle.green, row=4, emoji="\N{HEAVY CHECK MARK}")
     async def generate(self, interaction: discord.Interaction, _):
@@ -614,6 +630,7 @@ class GenerationSettingsView(LongLastingView):
             return
         # Update the button
         self._set_nsfw(self.generation_request.nsfw)
+        self._set_hires_fix(self.generation_request.params.hires_fix)
 
         await request_message.delete()
         with contextlib.suppress(discord.HTTPException):
@@ -1245,6 +1262,7 @@ async def get_finished_embed(
     )
     append_truthy("Denoising strength", generation_request.params.denoising_strength)
     append_truthy("Sampler", sampler.value if (sampler := generation_request.params.sampler) else None)
+    append_truthy("Hires Fix", generation_request.params.hires_fix)
     append_truthy("LoRAs", ", ".join(lora.identifier for lora in generation_request.params.loras or []))
     append_truthy(
         "Textual inversions",
