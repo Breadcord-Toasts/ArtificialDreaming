@@ -164,6 +164,18 @@ class ExtraSourceImage(HordeModel):
     )
 
 
+class ExtraText(HordeModel):
+    test: str = Field(
+        description="The extra text to send along with this generation.",
+        min_length=1,
+    )
+    reference: str | None = Field(
+        default=None,
+        description="The reference which points how and where this text should be used.",
+        min_length=3,
+    )
+
+
 class ImageGenerationParams(HordeModel):
     width: int | None = Field(
         default=None,
@@ -277,6 +289,15 @@ class ImageGenerationParams(HordeModel):
     special: dict | None = Field(
         default=None,
         description="Reserved field for special cases, should generally not be used.",
+    )
+
+    workflow: str | None = Field(
+        default=None,
+        description="The workflow to use when generating this request.",
+    )
+    extra_text: list[ExtraText] | None = Field(
+        default=None,
+        description="A list of extra text to send along with this generation.",
     )
 
 
