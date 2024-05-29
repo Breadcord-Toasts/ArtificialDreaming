@@ -48,12 +48,15 @@ def validate_dimensions(value: str | Sequence[int, int] | None) -> tuple[int, in
         return None
     # case of already parsed data being passed
     if isinstance(value, Sequence) and not isinstance(value, str):
-        assert len(value) == 2, "Must be a tuple of length 2"
+        if len(value) != 2:
+            raise ValueError("Must be a tuple of length 2")
         return value[0], value[1]  # Make the type checker happy, so it gets tuple[int, int] and not tuple[int, ...]
 
-    assert isinstance(value, str), "Must be a string"
+    if not isinstance(value, str):
+        raise ValueError("Must be a string")
     split = value.split("x", maxsplit=1)
-    assert len(split) == 2, 'Must be in the format "WIDTHxHEIGHT"'
+    if len(split) != 2:
+        raise ValueError('Must be in the format "WIDTHxHEIGHT"')
     return int(split[0]), int(split[1])
 
 

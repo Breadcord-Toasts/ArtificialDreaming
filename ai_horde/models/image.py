@@ -23,7 +23,8 @@ _T = TypeVar("_T")
 
 
 def unique_list_validator(value: list[_T]) -> list[_T]:
-    assert len(value) == len(set(value)), "List contains duplicate elements"
+    if len(value) != len(set(value)):
+        raise ValueError("List contains duplicate elements")
     return value
 
 

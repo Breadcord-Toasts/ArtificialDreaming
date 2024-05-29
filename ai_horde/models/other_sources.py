@@ -101,12 +101,14 @@ class Style(StyleBase):
     @model_validator(mode="before")
     @classmethod
     def fix_prompt(cls, data: Any) -> Any:
-        assert isinstance(data, dict), "Data must be a dict"
+        if not isinstance(data, dict):
+            raise ValueError("Data must be a dict")
         if "prompt" not in data:
             return data
 
         prompt = data.pop("prompt")
-        assert isinstance(prompt, str), "Prompt must be a string"
+        if not isinstance(prompt, str):
+            raise ValueError("Prompt must be a string")
         prompt = prompt.replace("{p}", "{positive_prompt}")
         prompt = prompt.replace("{np}", "{negative_prompt}")
 
