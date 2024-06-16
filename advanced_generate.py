@@ -1437,7 +1437,11 @@ class AttachmentDeletionView(discord.ui.View):
         if len(self.already_voted) < needed_votes:
             return
         await interaction.response.defer()
-        await interaction.message.edit(attachments=[])
+        lobotomised_view = self
+        for child in self.children:
+            if child == button:
+                button.disabled = True
+        await interaction.message.edit(attachments=[], view=lobotomised_view)
 
 
 class DeleteOrRetryView(AttachmentDeletionView):
@@ -1610,7 +1614,7 @@ async def process_generation(
                 filename=f"{generation.id}.webp",
             )
             for generation in generation_status.generations
-        ] if len(generation_status.generations) > 1 or not generation_status.generations[0].censored else [],
+        ] if not (len(generation_status.generations) == 1 and generation_status.generations[0].censored) else [],
         view=DeleteOrRetryView(
             required_votes=2,
             generation_params=generation_request,
