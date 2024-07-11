@@ -292,7 +292,7 @@ class ImageGenerationParams(HordeModel):
         description="Reserved field for special cases, should generally not be used.",
     )
 
-    workflow: str | None = Field(
+    workflow: Literal["qr_code"] | str | None = Field(
         default=None,
         description="The workflow to use when generating this request.",
     )

@@ -546,6 +546,17 @@ class GenerationSettingsView(LongLastingView):
         self._set_hires_fix(not self.generation_request.params.hires_fix)
         await defer_and_edit(interaction, self.generation_request, self.apis, view=self)
 
+    def _set_transparent(self, value: bool) -> None:
+        self.generation_request.params.transparent = value
+        self.transparency_toggle.label = " ".join((
+            *self.transparency_toggle.label.split(" ")[:-1], "Yes" if value else "No"
+        ))
+
+    @discord.ui.button(label="Transparent BG: No", style=discord.ButtonStyle.grey, row=3)
+    async def transparency_toggle(self, interaction: discord.Interaction, _):
+        self._set_transparent(not self.generation_request.params.transparent)
+        await defer_and_edit(interaction, self.generation_request, self.apis, view=self)
+
     @discord.ui.button(label="Generate", style=discord.ButtonStyle.green, row=4, emoji="\N{HEAVY CHECK MARK}")
     async def generate(self, interaction: discord.Interaction, _):
         for item in self.children:
@@ -652,6 +663,7 @@ class GenerationSettingsView(LongLastingView):
         # Update the button
         self._set_nsfw(self.generation_request.nsfw)
         self._set_hires_fix(self.generation_request.params.hires_fix)
+        self._set_transparent(self.generation_request.params.transparent)
 
         await request_message.delete()
         with contextlib.suppress(discord.HTTPException):
@@ -886,9 +898,9 @@ async def files_from_request(request: ImageGenerationRequest, /, session: aiohtt
 
 # noinspection PyUnusedLocal
 async def get_source_image_params(
-        generation_request: ImageGenerationRequest,
-        apis: APIPackage,
-        send_new: bool = False,
+    generation_request: ImageGenerationRequest,
+    apis: APIPackage,
+    send_new: bool = False,
 ) -> SourceImageParams:
     files = await files_from_request(generation_request, session=apis.session)
     params: SourceImageParams = dict(
