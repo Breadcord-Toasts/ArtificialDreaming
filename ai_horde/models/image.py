@@ -296,7 +296,7 @@ class ImageGenerationParams(HordeModel):
         default=None,
         description="The workflow to use when generating this request.",
     )
-    extra_text: list[ExtraText] | None = Field(
+    extra_texts: list[ExtraText] | None = Field(
         default=None,
         description="A list of extra text to send along with this generation.",
     )
