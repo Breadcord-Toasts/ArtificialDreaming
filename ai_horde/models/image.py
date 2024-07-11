@@ -300,6 +300,10 @@ class ImageGenerationParams(HordeModel):
         default=None,
         description="A list of extra text to send along with this generation.",
     )
+    transparent: bool | None = Field(
+        default=None,
+        description="If true, the generated image will have a transparent background.",
+    )
 
 
 class ImageGenerationRequest(HordeRequest):
