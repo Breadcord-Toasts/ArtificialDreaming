@@ -456,6 +456,7 @@ class GenerationSettingsView(LongLastingView):
 
         self._set_nsfw(self.generation_request.nsfw)
         self._set_hires_fix(self.generation_request.params.hires_fix)
+        self._set_transparent(self.generation_request.params.transparent)
         # TODO: Put support for post processors somewhere?
         #  Might need to split out lora/ti adding to another message, and also put post processors there.
         #  Remember to deal with facefixer_strength?
