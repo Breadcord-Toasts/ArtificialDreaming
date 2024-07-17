@@ -1,4 +1,5 @@
 import contextlib
+import datetime
 import random
 import sqlite3
 
@@ -16,7 +17,7 @@ from .ai_horde.cache import Cache
 from .ai_horde.interface import CivitAIAPI, HordeAPI
 from .ai_horde.models.civitai import CivitAIModel, CivitAIModelVersion, ModelType, SortOptions, SearchPeriod
 from .ai_horde.models.general import HordeRequestError
-from .ai_horde.models.horde_meta import HordeNews
+from .ai_horde.models.horde_meta import HordeNews, HordeUser, Worker
 from .ai_horde.models.image import (
     CaptionResult,
     ExtraSourceImage,
@@ -34,21 +35,8 @@ from .ai_horde.models.image import (
 from .ai_horde.models.other_sources import Style
 from .ai_horde.models.text import TextGenerationRequest, TextGenerationParams
 from .civitai_browser import CivitAIModelBrowserView
-from .helpers import APIPackage, LongLastingView, fetch_image, report_error
+from .helpers import APIPackage, fetch_image, report_error, map_flag_emojis, bool_emoji, format_embed_desc
 from .login import LoginButtonView
-
-
-class NoneWithProperties:
-    """Provides a nicer interface for accessing properties of objects that may not be defined."""
-
-    def __bool__(self) -> bool:
-        return False
-
-    def __getattr__(self, item) -> "NoneWithProperties":
-        return self
-
-    def __getitem__(self, item) -> "NoneWithProperties":
-        return self
 
 
 # === Big to do list ===
@@ -57,12 +45,7 @@ class NoneWithProperties:
 #  Make sure to cache it.
 
 
-class ArtificialDreaming(
-    breadcord.module.ModuleCog,
-    commands.GroupCog,
-    group_name="horde",
-    group_description="Run commands for the AI Horde.",
-):
+class ArtificialDreaming(breadcord.module.ModuleCog):
     def __init__(self, module_id: str) -> None:
         super().__init__(module_id)
         # All set in cog_load
@@ -117,7 +100,7 @@ class ArtificialDreaming(
             civitai_api=self.civitai,
             logger=self.logger,
             storage_path=self.module.storage_path / "cache",
-            formatted_cache=self.bot.settings.debug.value,
+            formatted_cache=bool(self.bot.settings.debug.value),
         )
 
         for discord_id, horde_api_key in self.db_cursor.execute(
@@ -152,6 +135,13 @@ class ArtificialDreaming(
     @tasks.loop(minutes=30)
     async def update_cache(self) -> None:
         await self.cache.update()
+
+    @commands.hybrid_group(
+        name="horde",
+        description="Run commands for the AI Horde.",
+    )
+    async def horde(self, ctx: commands.Context) -> None:
+        pass
 
     async def style_autocomplete(self, _, value: str) -> list[app_commands.Choice[str]]:
         styles = [style.name for style in self.cache.styles] + list(self.cache.style_categories.keys())
@@ -191,7 +181,9 @@ class ArtificialDreaming(
         name = name.lower().strip()
         return to_style(name) or from_category(name)
 
-    def horde_for(self, user: discord.User | discord.Member | int | UserTag) -> HordeAPI:
+    def horde_for(self, user: discord.User | discord.Member | int | UserTag | None) -> HordeAPI:
+        if user is None:
+            return self.anon_horde
         if isinstance(user, UserTag):
             user = user.id
         api = self.horde_apis.get(user)
@@ -200,7 +192,7 @@ class ArtificialDreaming(
             return self.anon_horde
         return api
 
-    @commands.hybrid_command()
+    @horde.command()
     async def login(self, ctx: commands.Context) -> None:
         """Log in to the AI Horde."""
         # TODO: If I ever implement CivitAI login, add it here.
@@ -252,7 +244,7 @@ class ArtificialDreaming(
 
         await response.edit(content="Successfully logged in.", view=None)
 
-    @commands.hybrid_command()
+    @horde.command()
     async def logout(self, ctx: commands.Context) -> None:
         """Log out of the AI Horde."""
         self.db_cursor.execute(
@@ -269,7 +261,7 @@ class ArtificialDreaming(
             await horde_api.session.close()
         await ctx.reply("Successfully logged out.")
 
-    @commands.hybrid_command()
+    @horde.command()
     @app_commands.autocomplete(
         style=style_autocomplete,
     )
@@ -341,7 +333,7 @@ class ArtificialDreaming(
             view=AttachmentDeletionView()
         )
 
-    @commands.hybrid_command()
+    @horde.command()
     async def advanced_generate(
         self,
         ctx: commands.Context,
@@ -371,7 +363,7 @@ class ArtificialDreaming(
             await report_error(ctx, error)
             self.logger.exception("Error occurred while generating image.")
 
-    @commands.hybrid_command()
+    @horde.command()
     async def civitai_search(
         self,
         ctx: commands.Context,
@@ -386,8 +378,6 @@ class ArtificialDreaming(
         """Search for models (diffuser, LoRA, TI, etc) on CivitAI."""
         if ctx.interaction:
             await ctx.defer()
-        self.civitai: CivitAIAPI
-        self.cache: Cache
 
         if hasattr(ctx.channel, "is_nsfw"):
             show_nsfw = ctx.channel.is_nsfw() and show_nsfw  # type: ignore[attr-defined]
@@ -448,7 +438,7 @@ class ArtificialDreaming(
             await report_error(interaction, error)
             self.logger.exception("Error occurred while generating image.")
 
-    @commands.hybrid_command()
+    @horde.command()
     async def text_generate(self, ctx: commands.Context, *, prompt: str) -> None:
         # TODO: Figure out how to make it act like a chat, even when we don't know the model that's going to be used?
         request = TextGenerationRequest(
@@ -482,6 +472,166 @@ class ArtificialDreaming(
                     )),
                 ),
             )
+
+    @horde.command(name="user")
+    async def user_info(self, ctx: commands.Context, user: str | None = None) -> None:
+        """Get information about a user."""
+        try:
+            user_id = int(user.split("#")[-1]) if user else None
+        except ValueError:
+            await ctx.reply(
+                "Invalid user. Make sure to give the user's ID and not only their name.",
+                ephemeral=True,
+            )
+            return
+        if not user_id and self.horde_apis.get(ctx.author.id) is None:
+            await ctx.reply(
+                "You are not logged in. "
+                "Either provide a user ID or log in with `/login` to see your own information.",
+                ephemeral=True,
+            )
+            return
+        horde_api = self.horde_for(ctx.author)
+
+        user_data: HordeUser
+        if user_id:
+            try:
+                user_data = await horde_api.get_user(user_id)
+            except HordeRequestError as error:
+                await ctx.reply(
+                    f"User with ID `{user_id}` not found."
+                    if error.code == 404 else
+                    f"Unable to get data for the user with ID `{user_id}`.",
+                    ephemeral=True,
+                )
+                return
+        else:
+            user_data = await horde_api.get_current_user()
+
+        embed = discord.Embed(
+            title=f"User {user_data.username.removesuffix(f'#{user_data.id}')}",
+            description=format_embed_desc({
+                "ID": f"`{user_data.id}`",
+                "Moderator": bool_emoji(True) if user_data.moderator else None,
+                "Service": bool_emoji(True) if user_data.service else None,
+                "Trusted": bool_emoji(user_data.trusted),
+                "Account created": f"<t:{int((datetime.datetime.now() - user_data.account_age).timestamp())}:R>",
+                "Max concurrent generations": user_data.concurrency,
+                "Workers": user_data.worker_count,
+            }),
+        )
+        if user_data.worker_ids:
+            embed.add_field(
+                name="Workers",
+                value="\n".join([
+                    f"{discord.utils.escape_markdown(worker.name)} `{worker_id}` " + " ".join(map_flag_emojis(
+                        (worker.online, (":satellite:", ":no_entry_sign:")),
+                        (worker.trusted, ":shield:"),
+                        (worker.flagged, ":triangular_flag_on_post:"),
+                        (worker.maintenance_mode, ":pause_button:"),
+                    ))
+                    for worker_id in user_data.worker_ids
+                    for worker in [await horde_api.get_worker(worker_id)]
+                ]),
+                inline=False,
+            )
+        embed.add_field(
+            name="Contributions",
+            value=format_embed_desc({
+                "Images": f"{user_data.records.fulfillment.image}"
+                          f" ({user_data.records.contribution.megapixelsteps:.0f} MPS)",
+                "Text": f"{user_data.records.fulfillment.text}"
+                        f" ({user_data.records.contribution.tokens} tokens)",
+                "Interrogations": f"{user_data.records.fulfillment.interrogation}",
+            }),
+            inline=False,
+        )
+        embed.add_field(
+            name="Usage",
+            value=format_embed_desc({
+                "Images": f"{user_data.records.request.image}"
+                          f" ({user_data.records.usage.megapixelsteps:.0f} MPS)",
+                "Text": f"{user_data.records.request.text}"
+                        f" ({user_data.records.usage.tokens} tokens)",
+                "Interrogations": f"{user_data.records.request.interrogation}",
+            }),
+            inline=False,
+        )
+
+        await ctx.reply(embed=embed)
+
+    @horde.command(name="worker")
+    async def worker_info(self, ctx: commands.Context, worker_id: str) -> None:
+        """Get information about a worker."""
+        try:
+            worker = await self.horde_for(ctx.author).get_worker(worker_id.strip())
+        except HordeRequestError as error:
+            await ctx.reply(
+                f"Worker with ID `{worker_id}` not found."
+                if error.code == 404 else
+                f"Unable to get data for the worker with ID `{worker_id}`.",
+                ephemeral=True,
+            )
+            return
+
+        flag_emojis = " ".join(map_flag_emojis(
+            (worker.online, (":satellite:", ":no_entry_sign:")),
+            (worker.trusted, ":shield:"),
+            (worker.flagged, ":triangular_flag_on_post:"),
+            (worker.maintenance_mode, ":pause_button:"),
+        ))
+        embed = discord.Embed(
+            title=f"Worker `{worker.name}` {flag_emojis}",
+            description=format_embed_desc({
+                "ID": f"`{worker.id}`",
+                "Online": bool_emoji(worker.online),
+                "Trusted": bool_emoji(worker.trusted),
+                "Flagged": bool_emoji(True) if worker.flagged else None,
+                "Maintenance mode": bool_emoji(True) if worker.maintenance_mode else None,
+                "Worker Type": worker.type.name.capitalize(),
+                "Models": ", ".join((f"`{model}`" for model in sorted(worker.models or []))) or None,
+                "Forms": ", ".join((f"`{form}`" for form in sorted(worker.forms or []))) or None,
+            }),
+        ).add_field(
+            name="Stats",
+            value=format_embed_desc({
+                "Total uptime": readable_delta(worker.uptime),
+                "Kudos received": f"{round(worker.kudos_rewards):,}",
+                "Performance": worker.performance,
+                "Requests received": f"{worker.requests_fulfilled} (+{worker.uncompleted_jobs} uncompleted)",
+                "Megapixelsteps generated": f"{round(worker.megapixelsteps_generated):,} MPS",
+                "Text tokens generated": f"{worker.tokens_generated:,}",
+            }),
+        ).add_field(
+            name="Generation info",
+            value=format_embed_desc({
+                "Threads": worker.threads,
+                "Max resolution": f"{(width := round(worker.max_pixels ** 0.5) // 64 * 64)}x{width}"
+                                  f" ({worker.max_pixels:,} pixels)" if worker.max_pixels else None,
+                "Max tokens": f"{worker.max_length}"
+                              + (f" ({worker.max_context_length} context)" if worker.max_context_length else "")
+                              if worker.max_length else None,
+                "": "",
+                "Image-to-image": bool_emoji(worker.img2img),
+                "Inpainting": bool_emoji(worker.painting),
+                "LoRAs": bool_emoji(worker.lora),
+                "Post-processing": bool_emoji(worker.post_processing),
+            }),
+            inline=False,
+        )
+        if worker.team:
+            team = await self.horde_for(ctx.author).get_team(worker.team.id)
+            embed.add_field(
+                name="Part of Team",
+                value=format_embed_desc({
+                    "Name": team.name,
+                    "ID": f"`{team.id}`",
+                }),
+                inline=False,
+            )
+
+        embed.set_footer(text=worker.bridge_agent)
+        await ctx.reply(embed=embed)
 
 
 async def setup(bot: breadcord.Bot):

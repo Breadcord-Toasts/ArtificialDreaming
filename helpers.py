@@ -1,6 +1,7 @@
+import datetime
 import io
 from logging import Logger
-from typing import NamedTuple
+from typing import NamedTuple, Any
 
 import aiohttp
 import discord
@@ -15,6 +16,10 @@ __all__ = [
     "report_error",
     "resize_to_match_area",
     "LongLastingView",
+    "map_flag_emojis",
+    "format_embed_desc",
+    "bool_emoji",
+    "readable_delta",
 ]
 
 
@@ -23,10 +28,12 @@ async def fetch_image(image: str | bytes, session: aiohttp.ClientSession) -> io.
         raise ValueError("No image provided. Was empty data received?")
     if isinstance(image, bytes):
         return io.BytesIO(image)
-    async with session.get(image) as response:
-        if not response.ok:
-            raise RuntimeError(f"Failed to fetch image: {response.status} {response.reason} ({image})")
-        return io.BytesIO(await response.read())
+    elif isinstance(image, str):
+        async with session.get(image) as response:
+            if not response.ok:
+                raise RuntimeError(f"Failed to fetch image: {response.status} {response.reason} ({image})")
+            return io.BytesIO(await response.read())
+    raise ValueError(f"Invalid image type: {type(image)}")
 
 
 class APIPackage(NamedTuple):
@@ -75,3 +82,40 @@ def resize_to_match_area(aspect_ratio: tuple[int, int], target_area: int, multip
 class LongLastingView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=60*60)
+
+
+def map_flag_emojis(*info: tuple[Any, str | tuple[str | None, str | None]]) -> list[str]:
+    mapped = []
+    for check, emojis in info:
+        result: str | None = (
+            (emojis if check else None)
+            if isinstance(emojis, str) else
+            (emojis[0] if check else emojis[1])
+        )
+        if result is not None:
+            mapped.append(result)
+    return mapped
+
+
+def format_embed_desc(items: dict[str, Any | None]) -> str:
+    return "\n".join(
+        f"**{key}:** {value}" if key else value
+        for key, value in items.items()
+        if value is not None
+    )
+
+
+def readable_delta(delta: datetime.timedelta) -> str:
+    if delta.days >= 5:
+        return f"{delta.days} days"
+    elif delta.days >= 1:
+        return f"{delta.days} days, {delta.seconds // 3600} hours"
+    elif delta.seconds >= 3600:
+        return f"{delta.seconds // 3600} hours, {delta.seconds % 3600 // 60} minutes"
+    elif delta.seconds >= 60:
+        return f"{delta.seconds // 60} minutes, {delta.seconds % 60} seconds"
+    return f"{delta.seconds} seconds"
+
+
+def bool_emoji(value: bool) -> str:
+    return ":white_check_mark:" if value else ":x:"
