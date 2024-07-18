@@ -634,5 +634,5 @@ class ArtificialDreaming(breadcord.module.ModuleCog):
         await ctx.reply(embed=embed)
 
 
-async def setup(bot: breadcord.Bot):
-    await bot.add_cog(ArtificialDreaming("artificial_dreaming"))
+async def setup(bot: breadcord.Bot, module: breadcord.module.Module) -> None:
+    await bot.add_cog(ArtificialDreaming(module.id))
