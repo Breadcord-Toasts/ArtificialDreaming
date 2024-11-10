@@ -240,7 +240,7 @@ class CivitAIModelFileMetadata(HordeModel):
         default=None,
         description="The model's size (full or pruned).",
     )
-    format: CivitAIFileFormat | None = Field(
+    format: CivitAIFileFormat | str | None = Field(
         default=None,
         description="The model file's format.",
     )
